@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Wave Animation - Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="bg"></canvas>
+
+    <!-- Import Three.js via CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- Basic Scene Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.querySelector('#bg'),
+            antialias: true
+        });
+
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.position.set(0, 4, 10);
+        camera.lookAt(0, 3, 0);
+
+        // --- Retro Colors ---
+        const colors = {
+            background: 0x0d0a1f,
+            fog: 0x0d0a1f,
+            grid: 0xff00ff,
+            gridCenter: 0x00ffff,
+            sun: 0xff6600,
+            mountains: 0x3a1f5d, // Dark purple
+            stars: 0xffffff
+        };
+
+        // --- Background & Fog ---
+        scene.background = new THREE.Color(colors.background);
+        scene.fog = new THREE.Fog(colors.fog, 15, 120);
+
+        // --- Lighting (Subtle) ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+        scene.add(ambientLight);
+
+        // --- The Grid ---
+        const gridConstructorSize = 200;
+        const gridConstructorDivisions = 40;
+        const gridHelper = new THREE.GridHelper(
+            gridConstructorSize,
+            gridConstructorDivisions,
+            colors.gridCenter,
+            colors.grid
+        );
+        gridHelper.position.y = -0.01;
+        scene.add(gridHelper);
+
+        // --- The Sun ---
+        const sunGeometry = new THREE.SphereGeometry(8, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: colors.sun });
+        const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        sunMesh.position.set(0, 10, -80);
+        scene.add(sunMesh);
+
+        // --- Mountains (Jagged with BufferGeometry & Leapfrog) ---
+        const mountainPeakiness = 5; // Increased peakiness slightly
+        const mountainHeight = 12;
+        const mountainWidth = 25;
+        const mountainDepth = 100;
+        const segments = 25; // Adjusted segment count
+
+        const mountainMaterial = new THREE.MeshBasicMaterial({
+             color: colors.mountains,
+             side: THREE.DoubleSide
+        });
+
+        // ***** CHANGED: Simplified height function - no Z dependency *****
+        // Function to generate jagged height
+        function generateJaggedHeight(baseHeight, peakiness) {
+            // Height depends only on base and randomness, not Z position within segment
+            const randomFactor = (Math.random() - 0.5) * peakiness;
+            return Math.max(0, baseHeight + randomFactor); // Ensure height is not negative
+        }
+
+        // Function to create jagged mountain side using BufferGeometry
+        function createJaggedMountainSide(isLeft) {
+            const sign = isLeft ? -1 : 1;
+            const baseX = sign * (mountainWidth / 2 + 5);
+
+            const vertices = [];
+            const indices = [];
+
+            // Generate vertices
+            for (let i = 0; i <= segments; i++) {
+                 const z = (i / segments) * -mountainDepth;
+                 // ***** CHANGED: Call simplified height function *****
+                 const yTop = generateJaggedHeight(mountainHeight, mountainPeakiness);
+                 const yBottom = 0;
+
+                 // Add vertices for this Z position (top and bottom)
+                 vertices.push(baseX, yTop, z);    // Top vertex at index i * 2
+                 vertices.push(baseX, yBottom, z); // Bottom vertex at index i * 2 + 1
+            }
+
+            // Generate indices for triangles
+             for (let i = 0; i < segments; i++) {
+                 const topLeft = i * 2;
+                 const bottomLeft = i * 2 + 1;
+                 const topRight = (i + 1) * 2;
+                 const bottomRight = (i + 1) * 2 + 1;
+
+                 // Triangle 1 (bottom left, bottom right, top left)
+                 indices.push(bottomLeft, bottomRight, topLeft);
+                 // Triangle 2 (bottom right, top right, top left)
+                 indices.push(bottomRight, topRight, topLeft);
+             }
+
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals(); // Recalculate normals
+
+            const mesh = new THREE.Mesh(geometry, mountainMaterial);
+            mesh.position.y = 0;
+            return mesh;
+        }
+
+        // Create two segments per side
+        const leftA = createJaggedMountainSide(true);
+        const leftB = createJaggedMountainSide(true);
+        const rightA = createJaggedMountainSide(false);
+        const rightB = createJaggedMountainSide(false);
+
+        // Position the 'B' segments behind the 'A' segments
+        leftB.position.z = -mountainDepth;
+        rightB.position.z = -mountainDepth;
+
+        // Add all segments to the scene
+        scene.add(leftA);
+        scene.add(leftB);
+        scene.add(rightA);
+        scene.add(rightB);
+
+        // --- Stars ---
+        const starGeometry = new THREE.BufferGeometry();
+        const starMaterial = new THREE.PointsMaterial({
+            color: colors.stars,
+            size: 0.15,
+            sizeAttenuation: true
+        });
+        const starVertices = [];
+        for (let i = 0; i < 6000; i++) {
+            const x = THREE.MathUtils.randFloatSpread(500);
+            const y = THREE.MathUtils.randFloat(5, 150);
+            const z = THREE.MathUtils.randFloatSpread(500);
+             if (new THREE.Vector3(x, y, z).length() > 40) {
+                 starVertices.push(x, y, z);
+            }
+        }
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        // --- Animation ---
+        const clock = new THREE.Clock();
+        const gridSpeed = 12;
+        const mountainSpeed = 12;
+
+        const gridLineSpacing = gridConstructorSize / gridConstructorDivisions;
+        const gridResetDistance = gridLineSpacing;
+
+        const mountainResetThreshold = mountainDepth;
+        const resetOffset = -mountainDepth * 2; // Amount to jump back
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Move grid
+            gridHelper.position.z = (gridHelper.position.z + delta * gridSpeed) % gridResetDistance;
+
+            // Move mountains
+            leftA.position.z += delta * mountainSpeed;
+            leftB.position.z += delta * mountainSpeed;
+            rightA.position.z += delta * mountainSpeed;
+            rightB.position.z += delta * mountainSpeed;
+
+            // Leapfrog logic
+            if (leftA.position.z >= mountainResetThreshold) { // Use >= for safer check
+                leftA.position.z += resetOffset;
+            }
+            if (leftB.position.z >= mountainResetThreshold) {
+                leftB.position.z += resetOffset;
+            }
+            if (rightA.position.z >= mountainResetThreshold) {
+                rightA.position.z += resetOffset;
+            }
+            if (rightB.position.z >= mountainResetThreshold) {
+                rightB.position.z += resetOffset;
+            }
+
+            // Subtle star rotation
+            stars.rotation.y += delta * 0.01;
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Handle Window Resize ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener('resize', onWindowResize, false);
+
+        // --- Start Animation ---
+        animate();
+
+    </script>
+</body>
+</html>

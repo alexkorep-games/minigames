@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Hole Game - Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #add8e6; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: sans-serif;
+            font-size: 1.5em;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Size: 1.00</div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.162.0/build/three.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- Configuration ---
+        const SCENE_SIZE = 100; // Defines the bounds of the playable area
+        const INITIAL_HOLE_RADIUS = 1;
+        const MAX_OBJECTS = 150;
+        const OBJECT_MIN_SIZE = 0.5;
+        const OBJECT_MAX_SIZE = 2.5;
+        const GROWTH_FACTOR = 0.05; // How much radius increases per object 'volume'
+        const MOVEMENT_SMOOTHING = 0.1; // Lower values = smoother movement
+
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let ground, holeMesh;
+        let consumableObjects = [];
+        let holeRadius = INITIAL_HOLE_RADIUS;
+        let holePosition = new THREE.Vector3(0, 0.01, 0); // Slightly above ground
+        let targetHolePosition = new THREE.Vector3(0, 0.01, 0);
+        let mouse = new THREE.Vector2();
+        let raycaster = new THREE.Raycaster();
+        let infoElement;
+
+        // --- Initialization ---
+        function init() {
+            // Info Element
+            infoElement = document.getElementById('info');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xadd8e6); // Light blue background
+            scene.fog = new THREE.Fog(0xadd8e6, SCENE_SIZE * 0.8, SCENE_SIZE * 1.5);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, SCENE_SIZE * 2);
+            camera.position.set(0, SCENE_SIZE * 0.6, SCENE_SIZE * 0.4); // Angled view
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true; // Enable shadows
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Soft ambient light
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Sun light
+            directionalLight.position.set(30, 50, 20);
+            directionalLight.castShadow = true;
+            // Configure shadow properties
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = SCENE_SIZE * 1.5;
+            directionalLight.shadow.camera.left = -SCENE_SIZE / 1.5;
+            directionalLight.shadow.camera.right = SCENE_SIZE / 1.5;
+            directionalLight.shadow.camera.top = SCENE_SIZE / 1.5;
+            directionalLight.shadow.camera.bottom = -SCENE_SIZE / 1.5;
+
+            scene.add(directionalLight);
+            // Optional: Add a light helper
+            // const lightHelper = new THREE.DirectionalLightHelper(directionalLight, 5);
+            // scene.add(lightHelper);
+            // const shadowHelper = new THREE.CameraHelper( directionalLight.shadow.camera );
+            // scene.add( shadowHelper );
+
+
+            // Ground
+            const groundGeometry = new THREE.PlaneGeometry(SCENE_SIZE, SCENE_SIZE);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, side: THREE.DoubleSide }); // Grey ground
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2; // Rotate to be flat
+            ground.receiveShadow = true; // Ground receives shadows
+            scene.add(ground);
+
+            // Player Hole
+            const holeGeometry = new THREE.CircleGeometry(1, 32); // Start with radius 1
+            const holeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide }); // Black hole
+            holeMesh = new THREE.Mesh(holeGeometry, holeMaterial);
+            holeMesh.rotation.x = -Math.PI / 2;
+            holeMesh.position.copy(holePosition);
+            holeMesh.scale.set(holeRadius, holeRadius, 1); // Initial scale based on radius
+            scene.add(holeMesh);
+
+            // Spawn initial objects
+            spawnObjects(MAX_OBJECTS);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('mousemove', onMouseMove, false);
+
+            // Start the animation loop
+            animate();
+        }
+
+        // --- Object Spawning ---
+        function spawnObjects(count) {
+            const objectGeometry = new THREE.BoxGeometry(1, 1, 1); // Base geometry
+
+            for (let i = 0; i < count; i++) {
+                const size = THREE.MathUtils.randFloat(OBJECT_MIN_SIZE, OBJECT_MAX_SIZE);
+                const objectMaterial = new THREE.MeshStandardMaterial({
+                    color: Math.random() * 0xffffff,
+                    roughness: 0.7,
+                    metalness: 0.2
+                });
+                const object = new THREE.Mesh(objectGeometry.clone(), objectMaterial);
+
+                // Position randomly within the scene bounds, slightly above ground
+                object.position.x = THREE.MathUtils.randFloat(-SCENE_SIZE / 2 + size, SCENE_SIZE / 2 - size);
+                object.position.y = size / 2; // Position based on size so it sits on the ground
+                object.position.z = THREE.MathUtils.randFloat(-SCENE_SIZE / 2 + size, SCENE_SIZE / 2 - size);
+
+                // Random rotation
+                object.rotation.x = Math.random() * Math.PI;
+                object.rotation.y = Math.random() * Math.PI;
+                object.rotation.z = Math.random() * Math.PI;
+
+                // Scale according to random size
+                object.scale.set(size, size, size);
+
+                object.castShadow = true; // Objects cast shadows
+                object.receiveShadow = false;
+
+                // Store size info for consumption/growth calculation
+                object.userData.size = size;
+                // Simple 'volume' estimate for growth amount
+                object.userData.volume = size * size * size;
+
+                scene.add(object);
+                consumableObjects.push(object);
+            }
+        }
+
+        // --- Event Handlers ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the raycaster
+            raycaster.setFromCamera(mouse, camera);
+
+            // Calculate objects intersecting the picking ray
+            const intersects = raycaster.intersectObject(ground); // Intersect only with the ground plane
+
+            if (intersects.length > 0) {
+                // Target position is the intersection point on the ground
+                targetHolePosition.copy(intersects[0].point);
+                targetHolePosition.y = 0.01; // Keep it slightly above ground
+                 // Clamp position to stay within bounds (consider hole radius)
+                const halfSize = SCENE_SIZE / 2 - holeRadius;
+                targetHolePosition.x = THREE.MathUtils.clamp(targetHolePosition.x, -halfSize, halfSize);
+                targetHolePosition.z = THREE.MathUtils.clamp(targetHolePosition.z, -halfSize, halfSize);
+            }
+        }
+
+        // --- Game Logic Update ---
+        function update() {
+             // Smoothly move the hole towards the target position
+            holePosition.lerp(targetHolePosition, MOVEMENT_SMOOTHING);
+            holeMesh.position.copy(holePosition);
+
+             // Clamp position again after lerping
+            const halfSize = SCENE_SIZE / 2 - holeRadius;
+            holePosition.x = THREE.MathUtils.clamp(holePosition.x, -halfSize, halfSize);
+            holePosition.z = THREE.MathUtils.clamp(holePosition.z, -halfSize, halfSize);
+            holeMesh.position.copy(holePosition); // Apply clamped position
+
+
+            // --- Collision Detection & Consumption ---
+            const consumedIndices = [];
+            for (let i = consumableObjects.length - 1; i >= 0; i--) {
+                const object = consumableObjects[i];
+                const distance = object.position.distanceTo(holePosition);
+
+                // Check if object's center is within the hole's radius
+                // Optional: Add a size check: && object.userData.size < holeRadius * 1.5 (e.g. object must be smaller)
+                if (distance < holeRadius) {
+                     // Consume the object
+                     scene.remove(object);
+                     consumedIndices.push(i);
+
+                     // Increase hole size based on consumed object's 'volume'
+                     const growthAmount = object.userData.volume * GROWTH_FACTOR;
+                     holeRadius += growthAmount;
+
+                     // Update hole mesh scale
+                     holeMesh.scale.set(holeRadius, holeRadius, 1);
+                 }
+            }
+
+            // Remove consumed objects from the array (iterating backwards avoids index issues)
+            for (const index of consumedIndices) {
+                consumableObjects.splice(index, 1);
+            }
+
+            // --- Respawn Objects ---
+            // Simple respawn logic: if below a certain threshold, add more
+             if (consumableObjects.length < MAX_OBJECTS / 2) {
+                spawnObjects(MAX_OBJECTS / 4); // Spawn a batch
+            }
+
+            // --- Update UI ---
+            infoElement.textContent = `Size: ${holeRadius.toFixed(2)}`;
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            update(); // Update game logic
+            renderer.render(scene, camera); // Render the scene
+        }
+
+        // --- Start the game ---
+        init();
+
+    </script>
+</body>
+</html>

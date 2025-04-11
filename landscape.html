@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Procedural Landscape</title>
+    <style>
+        /* ... your styles ... */
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute; top: 10px; width: 100%; text-align: center;
+            z-index: 100; display: block; color: white; font-family: monospace;
+            background-color: rgba(0,0,0,0.5); padding: 5px; display: none;
+        }
+        #loading {
+             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+             color: white; font-size: 1.5em; font-family: monospace; z-index: 101;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Landscape...</div>
+    <div id="info">Use WASD keys to move. Look around with the mouse (Click to lock/unlock).</div>
+    <canvas id="c"></canvas>
+
+    <!-- Import Three.js AND SimplexNoise via Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@3.0.1/+esm"
+            }
+        }
+    </script>
+
+    <!-- *** REMOVE ANY OLD <script src="..."> TAGS FOR SIMPLEX-NOISE *** -->
+
+    <!-- Main application logic as a module -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        // Import using the name defined in the importmap
+        import SimplexNoise from 'simplex-noise';
+
+        console.log('SimplexNoise', SimplexNoise);
+
+        // Declare variables in the module scope
+        let scene, camera, renderer, controls;
+        let clock;
+        let worldChunks = {};
+        let simplex; // Declare simplex here
+
+        // --- Configuration ---
+        const CHUNK_SIZE = 100;
+        const CHUNK_SEGMENTS = 50;
+        const RENDER_DISTANCE = 3;
+        const WORLD_HEIGHT_SCALE = 15;
+        const NOISE_SCALE = 0.03;
+        const PLAYER_SPEED = 30.0;
+        const PLAYER_HEIGHT = 1.8;
+        const WATER_LEVEL = -1;
+
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let currentChunkX = null;
+        let currentChunkZ = null;
+        let directionalLight;
+        let loadingElement = document.getElementById('loading');
+        let infoElement = document.getElementById('info');
+
+        // --- Initialization Function ---
+        function init() {
+            console.log("Attempting to initialize...");
+
+            try {
+                 // The import statement ensures SimplexNoise is available if the module loaded.
+                 // No need for typeof check anymore.
+                 simplex = new SimplexNoise(); // Use the imported class directly
+                 console.log("SimplexNoise initialized successfully via import (+esm).");
+            } catch (e) {
+                 // Catch potential errors during the SimplexNoise constructor call itself
+                 console.error("Failed to instantiate SimplexNoise:", e);
+                 if (loadingElement) loadingElement.textContent = "Error during SimplexNoise setup. Check console (F12).";
+                 alert("Error: Could not set up the noise generation library. Check browser console (F12).");
+                 return; // Stop execution
+            }
+
+            // --- Basic Setup ---
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, CHUNK_SIZE * 0.5, RENDER_DISTANCE * CHUNK_SIZE * 0.9);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, RENDER_DISTANCE * CHUNK_SIZE * 1.5);
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            clock = new THREE.Clock();
+
+            // --- Lighting ---
+            const ambientLight = new THREE.AmbientLight(0xcccccc, 0.6);
+            scene.add(ambientLight);
+
+            directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            directionalLight.position.set(CHUNK_SIZE * 0.5, 150, CHUNK_SIZE * 0.5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            const shadowCamSize = (RENDER_DISTANCE + 0.5) * CHUNK_SIZE;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -shadowCamSize;
+            directionalLight.shadow.camera.right = shadowCamSize;
+            directionalLight.shadow.camera.top = shadowCamSize;
+            directionalLight.shadow.camera.bottom = -shadowCamSize;
+            directionalLight.shadow.bias = -0.001;
+            scene.add(directionalLight);
+            scene.add(directionalLight.target);
+
+            // --- Controls ---
+            controls = new PointerLockControls(camera, document.body);
+            scene.add(controls.getObject());
+
+            infoElement.addEventListener('click', () => controls.lock());
+            controls.addEventListener('lock', () => { if(infoElement) infoElement.style.display = 'none'});
+            controls.addEventListener('unlock', () => { if(infoElement) infoElement.style.display = 'block' });
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            // --- Initial State ---
+            const initialPlayerX = CHUNK_SIZE / 4;
+            const initialPlayerZ = CHUNK_SIZE / 4;
+            // Ensure simplex is ready before calling getTerrainHeight
+            const initialTerrainY = getTerrainHeight(initialPlayerX, initialPlayerZ);
+            controls.getObject().position.set(initialPlayerX, initialTerrainY + PLAYER_HEIGHT + 5, initialPlayerZ);
+            directionalLight.target.position.set(initialPlayerX, 0, initialPlayerZ);
+
+
+            console.log("Initializing chunks...");
+            updateChunks(); // Perform initial load
+
+            if (loadingElement) loadingElement.style.display = 'none';
+            if (infoElement) infoElement.style.display = 'block';
+
+            // --- Start Animation Loop ---
+            console.log("Starting animation loop...");
+            animate();
+        }
+
+        // --- Terrain Height Function ---
+        function getTerrainHeight(worldX, worldZ) {
+             if (!simplex) {
+                 console.warn("getTerrainHeight called before simplex was initialized!");
+                 return 0;
+             }
+            // ... rest of getTerrainHeight is fine ...
+            let height = 0;
+            let frequency = NOISE_SCALE;
+            let amplitude = 1.0;
+            const octaves = 4;
+            const persistence = 0.5;
+            const lacunarity = 2.0;
+            for (let i = 0; i < octaves; i++) {
+                height += simplex.noise2D(worldX * frequency, worldZ * frequency) * amplitude;
+                amplitude *= persistence;
+                frequency *= lacunarity;
+            }
+            return height * WORLD_HEIGHT_SCALE;
+        }
+
+        // --- Chunk Generation Function ---
+        function generateChunk(chunkX, chunkZ) {
+            // ... function is fine, relies on simplex being initialized ...
+             const chunkId = `${chunkX}_${chunkZ}`;
+            if (worldChunks[chunkId]) return worldChunks[chunkId];
+            if (!simplex) return; // Don't generate if noise isn't ready
+
+            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
+            const positionAttribute = geometry.attributes.position;
+            const colors = [];
+            const worldOffsetX = chunkX * CHUNK_SIZE;
+            const worldOffsetZ = chunkZ * CHUNK_SIZE;
+
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const localX = positionAttribute.getX(i);
+                const localZ = positionAttribute.getY(i); // This was likely Y in PlaneGeometry before rotation
+                const worldX = worldOffsetX + localX;
+                const worldZ = worldOffsetZ + localZ; // Use localZ for world Z
+                const height = getTerrainHeight(worldX, worldZ);
+                positionAttribute.setZ(i, height); // Set height on Z before rotation
+
+                let color;
+                if (height < WATER_LEVEL + 0.5) { color = new THREE.Color(0x4682B4); }
+                else if (height < WATER_LEVEL + 2) { color = new THREE.Color(0xF4A460); }
+                 else if (height < WORLD_HEIGHT_SCALE * 0.5) {
+                     const greenNoise = (simplex.noise2D(worldX * 0.1, worldZ * 0.1) * 0.1) + 0.9;
+                     color = new THREE.Color(0x228B22).multiplyScalar(greenNoise);
+                 } else if (height < WORLD_HEIGHT_SCALE * 0.8) {
+                     const rockNoise = (simplex.noise2D(worldX * 0.2, worldZ * 0.2) * 0.15) + 0.85;
+                     color = new THREE.Color(0x808080).multiplyScalar(rockNoise);
+                 } else { color = new THREE.Color(0xffffff); }
+                colors.push(color.r, color.g, color.b);
+            }
+
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.rotateX(-Math.PI / 2); // Rotate AFTER setting height based on local X/Y
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide, // DoubleSide often helpful for terrain if camera can clip slightly below
+                roughness: 0.8,
+                metalness: 0.1
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            // Set position based on the center of the chunk in world coordinates
+            mesh.position.set(worldOffsetX + CHUNK_SIZE / 2, 0, worldOffsetZ + CHUNK_SIZE / 2);
+            mesh.receiveShadow = true;
+            mesh.castShadow = true; // Terrain chunks can cast shadows
+            mesh.userData = { chunkX, chunkZ };
+            worldChunks[chunkId] = mesh;
+            scene.add(mesh);
+            return mesh;
+        }
+
+        // --- Chunk Update Function ---
+        function updateChunks() {
+            // ... function is fine ...
+             if (!controls || !simplex) return;
+
+            const camX = controls.getObject().position.x;
+            const camZ = controls.getObject().position.z;
+            const newChunkX = Math.floor(camX / CHUNK_SIZE);
+            const newChunkZ = Math.floor(camZ / CHUNK_SIZE);
+
+            if (newChunkX === currentChunkX && newChunkZ === currentChunkZ && Object.keys(worldChunks).length > 0) {
+                 directionalLight.target.position.lerp(controls.getObject().position, 0.1);
+                 directionalLight.position.set(camX + 50, directionalLight.position.y, camZ + 50);
+                return;
+            }
+
+            currentChunkX = newChunkX;
+            currentChunkZ = newChunkZ;
+
+            const chunksToKeep = {};
+            const chunksToRemove = { ...worldChunks };
+
+            for (let x = currentChunkX - RENDER_DISTANCE; x <= currentChunkX + RENDER_DISTANCE; x++) {
+                for (let z = currentChunkZ - RENDER_DISTANCE; z <= currentChunkZ + RENDER_DISTANCE; z++) {
+                    const chunkId = `${x}_${z}`;
+                    chunksToKeep[chunkId] = true;
+                    if (!worldChunks[chunkId]) {
+                        generateChunk(x, z); // Generate if missing
+                    }
+                    delete chunksToRemove[chunkId]; // Remove from removal list
+                }
+            }
+
+            // Remove chunks that are no longer needed
+            for (const chunkId in chunksToRemove) {
+                const chunk = worldChunks[chunkId];
+                if (chunk) { // Check if chunk actually exists
+                   scene.remove(chunk);
+                   if (chunk.geometry) chunk.geometry.dispose();
+                   if (chunk.material) chunk.material.dispose();
+                   delete worldChunks[chunkId];
+                }
+            }
+
+            // Update light target and position relative to camera
+            directionalLight.position.set(camX + 50, directionalLight.position.y, camZ + 50);
+            directionalLight.target.position.set(camX, 0, camZ); // Target follows player XZ
+            directionalLight.target.updateMatrixWorld(); // Important for shadow camera updates
+            directionalLight.shadow.camera.updateProjectionMatrix(); // Update shadow camera if needed
+        }
+
+        // --- Keyboard Event Handlers ---
+        function onKeyDown(event) { /* ... is fine ... */
+             switch (event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
+            }
+         }
+        function onKeyUp(event) { /* ... is fine ... */
+             switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+         }
+
+        // --- Player Update Function ---
+        function updatePlayer(deltaTime) { /* ... is fine ... */
+             if (!controls) return;
+
+             const damping = 10.0;
+             velocity.x -= velocity.x * damping * deltaTime;
+             velocity.z -= velocity.z * damping * deltaTime;
+             // Prevent NaN issues if velocity becomes extremely small
+             if (isNaN(velocity.x)) velocity.x = 0;
+             if (isNaN(velocity.z)) velocity.z = 0;
+
+             console.log('controls.isLocked', controls.isLocked);
+
+
+            if (!controls.isLocked) { // Only apply movement/damping if locked
+                 velocity.x = 0; // Stop motion if pointer unlocked
+                 velocity.z = 0;
+                 return;
+             }
+
+            // Calculate movement direction based on camera orientation
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize(); // Ensure consistent speed regardless of diagonal movement
+
+            const acceleration = PLAYER_SPEED * 5.0; // Acceleration factor
+            if (moveForward || moveBackward) velocity.z -= direction.z * acceleration * deltaTime;
+            if (moveLeft || moveRight) velocity.x -= direction.x * acceleration * deltaTime;
+
+            // Optional: Clamp velocity to a maximum speed if desired, though damping handles this somewhat
+             velocity.clampLength(0, PLAYER_SPEED);
+
+
+            // Apply movement based on velocity
+            controls.moveRight(-velocity.x * deltaTime);
+            controls.moveForward(-velocity.z * deltaTime);
+
+            // Update player height based on terrain
+            const playerPos = controls.getObject().position;
+
+            if (simplex) {
+                const terrainY = getTerrainHeight(playerPos.x, playerPos.z);
+                const targetY = terrainY + PLAYER_HEIGHT;
+                const lerpFactor = 0.1; // Smoothing factor for height adjustment
+                // Smoothly adjust player height towards the target height
+                playerPos.y += (targetY - playerPos.y) * lerpFactor;
+
+                 // Collision Prevention: Ensure player doesn't sink too far below target height
+                 if (playerPos.y < terrainY + PLAYER_HEIGHT * 0.5) {
+                    playerPos.y = terrainY + PLAYER_HEIGHT * 0.5; // Hard clamp if too low
+                 }
+            }
+
+            updateChunks(); // Update chunks based on new player position
+        }
+
+        // --- Window Resize Handler ---
+        function onWindowResize() { /* ... is fine ... */
+            if (!camera || !renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+         }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = Math.min(0.05, clock.getDelta()); // Clamp delta to prevent large jumps
+            updatePlayer(deltaTime);
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // --- Start Logic ---
+        // Use window.onload for safety, ensuring external scripts (like simplex via CDN)
+        // and the DOM are fully ready.
+        window.onload = init;
+
+    </script>
+</body>
+</html>
