@@ -7,7 +7,8 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>
-      Bouncing Square with Wall Jump & Touch (Framerate Independent)
+      Bouncing Square with Wall Jump & Touch (Framerate Independent) - Level
+      Loaded
     </title>
     <style>
       body {
@@ -29,7 +30,7 @@
       }
       canvas {
         border: 1px solid #555;
-        background-color: #282c34;
+        background-color: #282c34; /* Fallback, usually overdrawn */
         touch-action: none; /* Crucial for preventing default touch actions like pan/zoom on the canvas */
       }
       #controls-info {
@@ -39,83 +40,90 @@
         margin-bottom: 10px; /* Space between info and canvas */
         text-align: center;
       }
+      #loading-message {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.5em;
+        background-color: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        z-index: 100; /* Ensure it's on top */
+      }
     </style>
   </head>
   <body>
-    <div id="controls-info">
-      <p>Controls:</p>
-      <ul>
-        <li>
-          Keyboard: Left/Right Arrows or A/D (Move), Up Arrow or W or Space
-          (Jump)
-        </li>
-        <li>Touch: Hold Left/Right half (Move), Quick Tap (Jump)</li>
-      </ul>
-    </div>
     <canvas id="gameCanvas"></canvas>
+    <div id="loading-message">Loading Level...</div>
 
     <script>
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
+      const loadingMessage = document.getElementById("loading-message");
 
       canvas.width = Math.min(window.innerWidth * 0.9, 800);
       canvas.height = Math.min(window.innerHeight * 0.7, 600);
       let canvasRect = canvas.getBoundingClientRect();
 
+      // --- Level Data ---
+      let levelData = null;
+      let tilesetImage = null;
+      let assetsLoaded = false;
+      let mapPixelWidth = 0;
+      let mapPixelHeight = 0;
+      let tilePropertiesCache = {};
+
       window.addEventListener("resize", () => {
         canvas.width = Math.min(window.innerWidth * 0.9, 800);
         canvas.height = Math.min(window.innerHeight * 0.7, 600);
-        canvasRect = canvas.getBoundingClientRect();
-        if (player.x > canvas.width - player.size / 2)
-          player.x = canvas.width - player.size / 2;
-        if (player.y > canvas.height - player.size / 2)
-          player.y = canvas.height - player.size / 2;
-        if (player.x < player.size / 2) player.x = player.size / 2;
-        if (player.y < player.size / 2) player.y = player.size / 2;
+        canvasRect = canvas.getBoundingClientRect(); // Update canvas position
+        camera.width = canvas.width;
+        camera.height = canvas.height;
       });
 
       // --- Constants for 60 FPS baseline ---
       const TARGET_FPS = 60;
       const PER_FRAME_TO_PER_SECOND = TARGET_FPS;
 
-      // Player properties (values are now per second or direct impulses)
+      // Player properties
       const player = {
         x: canvas.width / 2,
         y: canvas.height - 100,
-        size: 40,
+        size: 30, // Slightly smaller than tile for easier movement
         color: "#FF0000",
         eyeColor: "white",
         pupilColor: "black",
         vx: 0,
         vy: 0,
         mass: 1,
-        // Note: These values are significantly larger as they are now "per second"
-        jumpForce: 16 * PER_FRAME_TO_PER_SECOND, // Initial velocity for jump (pixels/sec) - might need tuning
-        moveSpeed: 96 * PER_FRAME_TO_PER_SECOND, // Acceleration (pixels/sec^2)
-        maxSpeedX: 96 * PER_FRAME_TO_PER_SECOND, // Max horizontal speed (pixels/sec)
+        jumpForce: 17 * PER_FRAME_TO_PER_SECOND,
+        moveSpeed: 96 * PER_FRAME_TO_PER_SECOND,
+        maxSpeedX: 6 * PER_FRAME_TO_PER_SECOND,
         onGround: false,
         isTouchingWall: false,
         wallDirection: 0,
-        wallSlideSpeed: 1.5 * PER_FRAME_TO_PER_SECOND, // Max vertical speed during wall slide (pixels/sec)
-        wallJumpForceX: 8 * PER_FRAME_TO_PER_SECOND * 0.9, // Horizontal velocity for wall jump
-        wallJumpForceY: 16 * PER_FRAME_TO_PER_SECOND * 0.9, // Vertical velocity for wall jump
+        wallSlideSpeed: 2 * PER_FRAME_TO_PER_SECOND,
+        wallJumpForceX: 7 * PER_FRAME_TO_PER_SECOND,
+        wallJumpForceY: 15 * PER_FRAME_TO_PER_SECOND,
       };
 
-      // Environment (values are now per second or factors)
-      const gravity = 64 * PER_FRAME_TO_PER_SECOND; // Acceleration due to gravity (pixels/sec^2)
-      const airFrictionFactor = 0.9; // Base factor for air friction (will be raised to power of dt*TARGET_FPS)
-      const groundFrictionFactor = 0.8; // Base factor for ground friction
+      // Environment
+      const gravity = 60 * PER_FRAME_TO_PER_SECOND;
+      const airFrictionFactor = 0.92;
+      const groundFrictionFactor = 0.8;
 
       // Tail particles
       let tailParticles = [];
       const MAX_TAIL_PARTICLES = 60;
-      const TAIL_LIFETIME_SECONDS = 0.5; // Lifetime in seconds
-      const TAIL_SPAWN_INTERVAL_SECONDS = 1 / 60; // Spawn one approx every frame at 60fps
+      const TAIL_LIFETIME_SECONDS = 0.5;
+      const TAIL_SPAWN_INTERVAL_SECONDS = 1 / 60;
       let tailSpawnTimer = 0;
 
       const keys = { left: false, right: false, up: false };
       let keyUpJustPressed = false;
 
+      // Touch controls
       let activeTouchId = null;
       let touchStartX = 0;
       let touchStartY = 0;
@@ -145,18 +153,18 @@
         if (e.key === "ArrowUp" || e.key.toLowerCase() === "w" || e.key === " ")
           keys.up = false;
       });
-
       canvas.addEventListener(
         "touchstart",
         (e) => {
           e.preventDefault();
+          canvasRect = canvas.getBoundingClientRect(); // Update rect on touch start
           if (activeTouchId === null) {
             const touch = e.changedTouches[0];
             activeTouchId = touch.identifier;
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             touchStartTime = Date.now();
-            if (touch.clientX < canvasRect.left + canvas.width / 2) {
+            if (touch.clientX - canvasRect.left < canvas.width / 2) {
               keys.left = true;
               keys.right = false;
             } else {
@@ -167,7 +175,6 @@
         },
         { passive: false }
       );
-
       canvas.addEventListener(
         "touchmove",
         (e) => {
@@ -176,7 +183,8 @@
             for (let i = 0; i < e.changedTouches.length; i++) {
               const touch = e.changedTouches[i];
               if (touch.identifier === activeTouchId) {
-                if (touch.clientX < canvasRect.left + canvas.width / 2) {
+                canvasRect = canvas.getBoundingClientRect(); // Update rect on touch move
+                if (touch.clientX - canvasRect.left < canvas.width / 2) {
                   keys.left = true;
                   keys.right = false;
                 } else {
@@ -190,7 +198,6 @@
         },
         { passive: false }
       );
-
       const handleTouchEnd = (e) => {
         e.preventDefault();
         if (activeTouchId !== null) {
@@ -224,6 +231,206 @@
         passive: false,
       });
 
+      const camera = {
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height,
+        update: function () {
+          if (!assetsLoaded) return;
+          let targetX = player.x - this.width / 2;
+          let targetY = player.y - this.height / 2;
+
+          this.x = Math.max(0, Math.min(targetX, mapPixelWidth - this.width));
+          this.y = Math.max(0, Math.min(targetY, mapPixelHeight - this.height));
+
+          if (mapPixelWidth <= this.width) {
+            // Map narrower than or same as canvas
+            this.x = (mapPixelWidth - this.width) / 2; // Center horizontally
+          }
+          if (mapPixelHeight <= this.height) {
+            // Map shorter than or same as canvas
+            this.y = (mapPixelHeight - this.height) / 2; // Center vertically
+          }
+        },
+      };
+
+      async function loadAssetsAndInitialize() {
+        try {
+          const response = await fetch("level01.tmj");
+          if (!response.ok)
+            throw new Error(
+              `HTTP error! status: ${response.status} loading level01.tmj`
+            );
+          levelData = await response.json();
+
+          if (!levelData.tilesets || levelData.tilesets.length === 0)
+            throw new Error("No tilesets in level data.");
+          const tilesetInfo = levelData.tilesets[0];
+          if (!tilesetInfo.image)
+            throw new Error("Tileset missing image path.");
+
+          tilesetImage = new Image();
+          const imageLoadPromise = new Promise((resolve, reject) => {
+            tilesetImage.onload = () => resolve();
+            tilesetImage.onerror = () =>
+              reject(
+                new Error(`Failed to load tileset image: ${tilesetInfo.image}`)
+              );
+          });
+          tilesetImage.src = tilesetInfo.image;
+          await imageLoadPromise;
+
+          mapPixelWidth = levelData.width * levelData.tilewidth;
+          mapPixelHeight = levelData.height * levelData.tileheight;
+
+          initTileProperties();
+
+          const collisionLayer = levelData.layers.find(
+            (l) => l.type === "tilelayer" && l.name === "platforms"
+          );
+          if (collisionLayer) {
+            let spawnFound = false;
+            for (
+              let r = collisionLayer.height - 2;
+              r >= 0 && !spawnFound;
+              r--
+            ) {
+              for (
+                let c = 1;
+                c < collisionLayer.width - 1 && !spawnFound;
+                c++
+              ) {
+                const currentTileGid = getTileGID(c, r, collisionLayer);
+                const tileBelowGid = getTileGID(c, r + 1, collisionLayer);
+                if (!isSolidTile(currentTileGid) && isSolidTile(tileBelowGid)) {
+                  player.x = c * levelData.tilewidth + levelData.tilewidth / 2;
+                  player.y = (r + 1) * levelData.tileheight - player.size / 2; // Feet on top of tile r+1
+                  spawnFound = true;
+                }
+              }
+            }
+            if (!spawnFound) {
+              player.x = levelData.tilewidth * 1.5;
+              player.y =
+                mapPixelHeight - levelData.tileheight * 2 - player.size / 2;
+              console.warn("Using fallback spawn point.");
+            }
+          } else {
+            throw new Error("Collision layer 'platforms' not found.");
+          }
+
+          assetsLoaded = true;
+          loadingMessage.style.display = "none";
+          startGameLoop();
+        } catch (error) {
+          console.error("Error loading assets:", error);
+          const tilesetName =
+            levelData && levelData.tilesets && levelData.tilesets[0]
+              ? levelData.tilesets[0].image
+              : "tileset image";
+          loadingMessage.innerHTML = `Error: ${error.message}. <br>Ensure 'level01.tmj' and '${tilesetName}' are in the same folder as this HTML file.`;
+          loadingMessage.style.color = "red";
+        }
+      }
+
+      function initTileProperties() {
+        if (!levelData) return;
+        tilePropertiesCache = {};
+        levelData.tilesets.forEach((tileset) => {
+          if (tileset.tiles) {
+            tileset.tiles.forEach((tileProp) => {
+              const globalId = tileset.firstgid + tileProp.id;
+              tilePropertiesCache[globalId] = {};
+              if (tileProp.type)
+                tilePropertiesCache[globalId].type = tileProp.type;
+              if (tileProp.properties) {
+                tileProp.properties.forEach((p) => {
+                  tilePropertiesCache[globalId][p.name] = p.value;
+                });
+              }
+            });
+          }
+        });
+      }
+
+      function getTileProperty(gid, propertyName) {
+        return tilePropertiesCache[gid]
+          ? tilePropertiesCache[gid][propertyName]
+          : undefined;
+      }
+
+      function isSolidTile(gid) {
+        if (gid === 0) return false;
+        return getTileProperty(gid, "type") === "platform";
+      }
+
+      function getTileGID(tileX, tileY, layer) {
+        if (!layer)
+          layer = levelData.layers.find(
+            (l) => l.type === "tilelayer" && l.name === "platforms"
+          );
+        if (
+          !layer ||
+          tileX < 0 ||
+          tileX >= layer.width ||
+          tileY < 0 ||
+          tileY >= layer.height
+        )
+          return 0;
+        return layer.data[tileY * layer.width + tileX];
+      }
+
+      function drawLevel() {
+        if (!assetsLoaded) return;
+
+        const TILE_WIDTH = levelData.tilewidth;
+        const TILE_HEIGHT = levelData.tileheight;
+        const tileset = levelData.tilesets[0];
+        const tilesetCols = Math.floor(tileset.imagewidth / TILE_WIDTH);
+
+        const camLeftTile = Math.floor(camera.x / TILE_WIDTH);
+        const camTopTile = Math.floor(camera.y / TILE_HEIGHT);
+        const camRightTile = Math.ceil((camera.x + camera.width) / TILE_WIDTH);
+        const camBottomTile = Math.ceil(
+          (camera.y + camera.height) / TILE_HEIGHT
+        );
+
+        levelData.layers.forEach((layer) => {
+          if (layer.type === "tilelayer" && layer.visible) {
+            for (
+              let r = Math.max(0, camTopTile);
+              r < Math.min(layer.height, camBottomTile);
+              r++
+            ) {
+              for (
+                let c = Math.max(0, camLeftTile);
+                c < Math.min(layer.width, camRightTile);
+                c++
+              ) {
+                const gid = layer.data[r * layer.width + c];
+                if (gid !== 0) {
+                  const localId = gid - tileset.firstgid;
+                  const sx = (localId % tilesetCols) * TILE_WIDTH;
+                  const sy = Math.floor(localId / tilesetCols) * TILE_HEIGHT;
+                  ctx.drawImage(
+                    tilesetImage,
+                    sx,
+                    sy,
+                    TILE_WIDTH,
+                    TILE_HEIGHT,
+                    c * TILE_WIDTH,
+                    r * TILE_HEIGHT,
+                    TILE_WIDTH,
+                    TILE_HEIGHT
+                  );
+                }
+              }
+            }
+          }
+        });
+      }
+
       function drawPlayer() {
         ctx.fillStyle = player.color;
         ctx.fillRect(
@@ -232,143 +439,66 @@
           player.size,
           player.size
         );
+
         const eyeRadius = player.size * 0.15;
         const eyeOffsetX = player.size * 0.2;
         const eyeOffsetY = player.size * 0.075;
+        const playerCenterX = player.x;
+        const playerCenterY = player.y;
+
         ctx.fillStyle = player.eyeColor;
         ctx.beginPath();
         ctx.arc(
-          player.x - eyeOffsetX,
-          player.y - eyeOffsetY,
+          playerCenterX - eyeOffsetX,
+          playerCenterY - eyeOffsetY,
           eyeRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
         ctx.beginPath();
         ctx.arc(
-          player.x + eyeOffsetX,
-          player.y - eyeOffsetY,
+          playerCenterX + eyeOffsetX,
+          playerCenterY - eyeOffsetY,
           eyeRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
+
         const pupilRadius = eyeRadius * 0.5;
         let pupilLookOffset = 0;
-        if (player.vx > 0.5 * PER_FRAME_TO_PER_SECOND * 0.1)
-          pupilLookOffset = eyeRadius * 0.3; // Adjusted threshold
-        else if (player.vx < -0.5 * PER_FRAME_TO_PER_SECOND * 0.1)
-          pupilLookOffset = -eyeRadius * 0.3; // Adjusted threshold
-        const pupilOffsetY = 0;
+        if (player.vx > 0.1 * PER_FRAME_TO_PER_SECOND * 0.1)
+          pupilLookOffset = eyeRadius * 0.3;
+        else if (player.vx < -0.1 * PER_FRAME_TO_PER_SECOND * 0.1)
+          pupilLookOffset = -eyeRadius * 0.3;
+
+        const pupilYPos = playerCenterY - eyeOffsetY;
+
         ctx.fillStyle = player.pupilColor;
         ctx.beginPath();
         ctx.arc(
-          player.x - eyeOffsetX + pupilLookOffset,
-          player.y - eyeOffsetY + pupilOffsetY,
+          playerCenterX - eyeOffsetX + pupilLookOffset,
+          pupilYPos,
           pupilRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
         ctx.beginPath();
         ctx.arc(
-          player.x + eyeOffsetX + pupilLookOffset,
-          player.y - eyeOffsetY + pupilOffsetY,
+          playerCenterX + eyeOffsetX + pupilLookOffset,
+          pupilYPos,
           pupilRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
-      }
-
-      function updatePlayer(dt) {
-        // dt is delta time in seconds
-        // Horizontal movement (acceleration)
-        if (keys.left) player.vx -= player.moveSpeed * dt;
-        if (keys.right) player.vx += player.moveSpeed * dt;
-
-        // Apply friction
-        if (player.onGround) {
-          player.vx *= Math.pow(groundFrictionFactor, dt * TARGET_FPS);
-        } else {
-          player.vx *= Math.pow(airFrictionFactor, dt * TARGET_FPS);
-        }
-
-        // Clamp horizontal speed
-        player.vx = Math.max(
-          -player.maxSpeedX,
-          Math.min(player.maxSpeedX, player.vx)
-        );
-
-        // Apply gravity (acceleration)
-        player.vy += gravity * dt;
-
-        player.isTouchingWall = false;
-        player.wallDirection = 0;
-
-        // Tentative next position
-        let nextX = player.x + player.vx * dt;
-        let nextY = player.y + player.vy * dt;
-
-        // Wall collisions
-        if (nextX - player.size / 2 <= 0) {
-          nextX = player.size / 2;
-          if (player.vx < 0) player.vx = 0;
-          player.isTouchingWall = true;
-          player.wallDirection = -1;
-        } else if (nextX + player.size / 2 >= canvas.width) {
-          nextX = canvas.width - player.size / 2;
-          if (player.vx > 0) player.vx = 0;
-          player.isTouchingWall = true;
-          player.wallDirection = 1;
-        }
-
-        // Jump logic
-        if (keyUpJustPressed) {
-          if (player.onGround) {
-            player.vy = -player.jumpForce; // Directly set vertical velocity
-          } else if (player.isTouchingWall && !player.onGround) {
-            player.vy = -player.wallJumpForceY;
-            player.vx = -player.wallDirection * player.wallJumpForceX;
-          }
-        }
-        keyUpJustPressed = false; // Reset after processing
-
-        // Wall slide
-        if (player.isTouchingWall && !player.onGround && player.vy > 0) {
-          player.vy = Math.min(player.vy, player.wallSlideSpeed); // Clamp slide speed
-        }
-
-        // Update position (apply velocities)
-        player.x = nextX; // Use the collision-adjusted nextX
-        player.y += player.vy * dt; // Update Y separately for now, ground check will correct
-
-        // Ground collision
-        if (player.y + player.size / 2 > canvas.height) {
-          player.y = canvas.height - player.size / 2;
-          player.vy = 0;
-          player.onGround = true;
-        } else {
-          player.onGround = false;
-        }
-
-        // Ceiling collision
-        if (player.y - player.size / 2 < 0) {
-          player.y = player.size / 2;
-          if (player.vy < 0) player.vy *= -0.2; // Small bounce
-        }
       }
 
       function manageTail(dt) {
         tailSpawnTimer += dt;
         const speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-
-        // Check if it's time to spawn a new particle based on speed and interval
         if (
           speed > 0.5 * PER_FRAME_TO_PER_SECOND * 0.1 &&
           tailSpawnTimer >= TAIL_SPAWN_INTERVAL_SECONDS
@@ -379,16 +509,16 @@
             radius: (player.size / 2) * 0.8,
             originalRadius: (player.size / 2) * 0.8,
             color: player.color,
-            life: TAIL_LIFETIME_SECONDS, // Life is now in seconds
+            life: TAIL_LIFETIME_SECONDS,
             maxLife: TAIL_LIFETIME_SECONDS,
           });
-          tailSpawnTimer = 0; // Reset timer
+          tailSpawnTimer = 0;
         }
         if (tailParticles.length > MAX_TAIL_PARTICLES) tailParticles.shift();
 
         for (let i = tailParticles.length - 1; i >= 0; i--) {
           const p = tailParticles[i];
-          p.life -= dt; // Decrease life by delta time
+          p.life -= dt;
           if (p.life <= 0) {
             tailParticles.splice(i, 1);
           } else {
@@ -405,7 +535,6 @@
           }
         }
       }
-
       function hexToRgb(hex) {
         if (!hex) return null;
         const localHex = hex.startsWith("#") ? hex.slice(1) : hex;
@@ -417,32 +546,175 @@
         return { r, g, b };
       }
 
+      function updatePlayer(dt) {
+        if (!assetsLoaded) return;
+
+        if (keys.left) player.vx -= player.moveSpeed * dt;
+        if (keys.right) player.vx += player.moveSpeed * dt;
+
+        if (player.onGround)
+          player.vx *= Math.pow(groundFrictionFactor, dt * TARGET_FPS);
+        else player.vx *= Math.pow(airFrictionFactor, dt * TARGET_FPS);
+
+        player.vx = Math.max(
+          -player.maxSpeedX,
+          Math.min(player.maxSpeedX, player.vx)
+        );
+        if (Math.abs(player.vx) < 0.01) player.vx = 0; // Deadzone to stop movement
+
+        player.vy += gravity * dt;
+
+        const TILE_WIDTH = levelData.tilewidth;
+        const TILE_HEIGHT = levelData.tileheight;
+        const halfSize = player.size / 2;
+        const collisionLayer = levelData.layers.find(
+          (l) => l.type === "tilelayer" && l.name === "platforms"
+        );
+
+        player.isTouchingWall = false;
+
+        player.x += player.vx * dt;
+        let playerRect = {
+          left: player.x - halfSize,
+          right: player.x + halfSize,
+          top: player.y - halfSize,
+          bottom: player.y + halfSize,
+        };
+
+        let minTx = Math.floor(playerRect.left / TILE_WIDTH);
+        let maxTx = Math.floor(playerRect.right / TILE_WIDTH);
+        let minTy = Math.floor(playerRect.top / TILE_HEIGHT);
+        let maxTy = Math.floor(playerRect.bottom / TILE_HEIGHT);
+
+        for (let ty = minTy; ty <= maxTy; ty++) {
+          for (let tx = minTx; tx <= maxTx; tx++) {
+            const gid = getTileGID(tx, ty, collisionLayer);
+            if (isSolidTile(gid)) {
+              const tileWorldRect = {
+                left: tx * TILE_WIDTH,
+                right: (tx + 1) * TILE_WIDTH,
+                top: ty * TILE_HEIGHT,
+                bottom: (ty + 1) * TILE_HEIGHT,
+              };
+              if (
+                playerRect.right > tileWorldRect.left &&
+                playerRect.left < tileWorldRect.right &&
+                playerRect.top < tileWorldRect.bottom &&
+                playerRect.bottom > tileWorldRect.top
+              ) {
+                if (player.vx > 0) {
+                  player.x = tileWorldRect.left - halfSize;
+                  player.isTouchingWall = true;
+                  player.wallDirection = 1;
+                } else if (player.vx < 0) {
+                  player.x = tileWorldRect.right + halfSize;
+                  player.isTouchingWall = true;
+                  player.wallDirection = -1;
+                }
+                player.vx = 0;
+                playerRect.left = player.x - halfSize;
+                playerRect.right = player.x + halfSize;
+              }
+            }
+          }
+        }
+
+        player.onGround = false;
+        player.y += player.vy * dt;
+        playerRect.top = player.y - halfSize;
+        playerRect.bottom = player.y + halfSize;
+
+        minTx = Math.floor(playerRect.left / TILE_WIDTH);
+        maxTx = Math.floor(playerRect.right / TILE_WIDTH);
+        minTy = Math.floor(playerRect.top / TILE_HEIGHT);
+        maxTy = Math.floor(playerRect.bottom / TILE_HEIGHT);
+
+        for (let ty = minTy; ty <= maxTy; ty++) {
+          for (let tx = minTx; tx <= maxTx; tx++) {
+            const gid = getTileGID(tx, ty, collisionLayer);
+            if (isSolidTile(gid)) {
+              const tileWorldRect = {
+                left: tx * TILE_WIDTH,
+                right: (tx + 1) * TILE_WIDTH,
+                top: ty * TILE_HEIGHT,
+                bottom: (ty + 1) * TILE_HEIGHT,
+              };
+              if (
+                playerRect.right > tileWorldRect.left &&
+                playerRect.left < tileWorldRect.right &&
+                playerRect.top < tileWorldRect.bottom &&
+                playerRect.bottom > tileWorldRect.top
+              ) {
+                if (player.vy > 0) {
+                  player.y = tileWorldRect.top - halfSize;
+                  player.onGround = true;
+                } else if (player.vy < 0) {
+                  player.y = tileWorldRect.bottom + halfSize;
+                }
+                player.vy = 0;
+                playerRect.top = player.y - halfSize;
+                playerRect.bottom = player.y + halfSize;
+              }
+            }
+          }
+        }
+
+        if (keyUpJustPressed) {
+          if (player.onGround) {
+            player.vy = -player.jumpForce;
+            player.onGround = false;
+          } else if (player.isTouchingWall && !player.onGround) {
+            player.vy = -player.wallJumpForceY;
+            player.vx = -player.wallDirection * player.wallJumpForceX;
+          }
+        }
+        keyUpJustPressed = false;
+
+        if (player.isTouchingWall && !player.onGround && player.vy > 0) {
+          player.vy = Math.min(player.vy, player.wallSlideSpeed);
+        }
+      }
+
       let lastTime = 0;
       function gameLoop(currentTime) {
-        // Convert timestamp to seconds for convenience
-        currentTime /= 1000;
-        if (lastTime === 0) {
-          // First frame initialization
-          lastTime = currentTime;
+        if (!assetsLoaded) {
           requestAnimationFrame(gameLoop);
           return;
         }
 
+        currentTime /= 1000;
+        if (lastTime === 0) {
+          lastTime = currentTime;
+          requestAnimationFrame(gameLoop);
+          return;
+        }
         const dt = currentTime - lastTime;
         lastTime = currentTime;
 
-        // --- Game simulation cap / panic ---
-        // if (dt > 1/15) { // if frame takes longer than 1/15th of a second (e.g. tab was inactive)
-        //     dt = 1/15;   // clamp dt to avoid huge jumps
-        // }
+        ctx.fillStyle = "#3d404d";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
         updatePlayer(dt);
-        manageTail(dt); // Pass dt to tail management
+        camera.update();
+
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        drawLevel();
+        manageTail(dt);
         drawPlayer();
+
+        ctx.restore();
+
         requestAnimationFrame(gameLoop);
       }
-      requestAnimationFrame(gameLoop); // Start the loop
+
+      function startGameLoop() {
+        lastTime = 0;
+        requestAnimationFrame(gameLoop);
+      }
+
+      loadAssetsAndInitialize();
     </script>
   </body>
 </html>
