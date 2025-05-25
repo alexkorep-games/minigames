@@ -1,0 +1,12 @@
+{
+  "name": "minigames",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:alexkorep-games/minigames.git",
+  "author": "Alexey Korepanov <alexkorep@gmail.com>",
+  "license": "MIT"
+  ,
+  "scripts": {
+    "dev": "npx http-server . -c-1 -p 3000"
+  }
+}
