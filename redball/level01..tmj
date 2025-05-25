@@ -53,7 +53,7 @@
             7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
          "height":48,
          "id":1,
-         "name":"Tile Layer 1",
+         "name":"platforms",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
@@ -61,7 +61,7 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":2,
+ "nextlayerid":3,
  "nextobjectid":1,
  "orientation":"orthogonal",
  "renderorder":"right-down",
@@ -77,7 +77,7 @@
          "margin":0,
          "name":"cave",
          "spacing":0,
-         "tilecount":1536,
+         "tilecount":54,
          "tileheight":32,
          "tiles":[
                 {

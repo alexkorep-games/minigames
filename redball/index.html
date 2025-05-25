@@ -6,7 +6,9 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
-    <title>Bouncing Square with Wall Jump & Touch</title>
+    <title>
+      Bouncing Square with Wall Jump & Touch (Framerate Independent)
+    </title>
     <style>
       body {
         margin: 0;
@@ -56,73 +58,71 @@
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
 
-      // Canvas setup
-      canvas.width = Math.min(window.innerWidth * 0.9, 800); // Responsive width
-      canvas.height = Math.min(window.innerHeight * 0.7, 600); // Responsive height
-
-      let canvasRect = canvas.getBoundingClientRect(); // Get initial dimensions
+      canvas.width = Math.min(window.innerWidth * 0.9, 800);
+      canvas.height = Math.min(window.innerHeight * 0.7, 600);
+      let canvasRect = canvas.getBoundingClientRect();
 
       window.addEventListener("resize", () => {
         canvas.width = Math.min(window.innerWidth * 0.9, 800);
         canvas.height = Math.min(window.innerHeight * 0.7, 600);
-        canvasRect = canvas.getBoundingClientRect(); // Update on resize
-        // Re-center player if needed, or ensure it's within new bounds
+        canvasRect = canvas.getBoundingClientRect();
         if (player.x > canvas.width - player.size / 2)
           player.x = canvas.width - player.size / 2;
         if (player.y > canvas.height - player.size / 2)
           player.y = canvas.height - player.size / 2;
-        // Optional: check left/top as well if desired
         if (player.x < player.size / 2) player.x = player.size / 2;
         if (player.y < player.size / 2) player.y = player.size / 2;
       });
 
-      // Player properties
+      // --- Constants for 60 FPS baseline ---
+      const TARGET_FPS = 60;
+      const PER_FRAME_TO_PER_SECOND = TARGET_FPS;
+
+      // Player properties (values are now per second or direct impulses)
       const player = {
         x: canvas.width / 2,
-        y: canvas.height - 100, // y is the center of the square
-        size: 40, // Side length of the square
-        color: "#FF0000", 
+        y: canvas.height - 100,
+        size: 40,
+        color: "#FF0000",
         eyeColor: "white",
         pupilColor: "black",
         vx: 0,
         vy: 0,
         mass: 1,
-        jumpForce: 13,
-        moveSpeed: 0.8,
-        maxSpeedX: 7,
+        // Note: These values are significantly larger as they are now "per second"
+        jumpForce: 16 * PER_FRAME_TO_PER_SECOND, // Initial velocity for jump (pixels/sec) - might need tuning
+        moveSpeed: 96 * PER_FRAME_TO_PER_SECOND, // Acceleration (pixels/sec^2)
+        maxSpeedX: 96 * PER_FRAME_TO_PER_SECOND, // Max horizontal speed (pixels/sec)
         onGround: false,
         isTouchingWall: false,
         wallDirection: 0,
-        wallSlideSpeed: 1.5,
-        wallJumpForceX: 8,
-        wallJumpForceY: 12,
+        wallSlideSpeed: 1.5 * PER_FRAME_TO_PER_SECOND, // Max vertical speed during wall slide (pixels/sec)
+        wallJumpForceX: 8 * PER_FRAME_TO_PER_SECOND * 0.9, // Horizontal velocity for wall jump
+        wallJumpForceY: 16 * PER_FRAME_TO_PER_SECOND * 0.9, // Vertical velocity for wall jump
       };
 
-      // Environment
-      const gravity = 0.6;
-      const friction = 0.9;
-      const groundFriction = 0.85;
+      // Environment (values are now per second or factors)
+      const gravity = 64 * PER_FRAME_TO_PER_SECOND; // Acceleration due to gravity (pixels/sec^2)
+      const airFrictionFactor = 0.9; // Base factor for air friction (will be raised to power of dt*TARGET_FPS)
+      const groundFrictionFactor = 0.8; // Base factor for ground friction
 
       // Tail particles
       let tailParticles = [];
       const MAX_TAIL_PARTICLES = 60;
-      const TAIL_LIFETIME = 30;
-      const TAIL_SPAWN_INTERVAL = 1;
-      let tailSpawnCounter = 0;
+      const TAIL_LIFETIME_SECONDS = 0.5; // Lifetime in seconds
+      const TAIL_SPAWN_INTERVAL_SECONDS = 1 / 60; // Spawn one approx every frame at 60fps
+      let tailSpawnTimer = 0;
 
-      // Input handling
       const keys = { left: false, right: false, up: false };
       let keyUpJustPressed = false;
 
-      // Touch handling variables
       let activeTouchId = null;
       let touchStartX = 0;
       let touchStartY = 0;
       let touchStartTime = 0;
-      const TAP_DURATION_THRESHOLD = 250; // ms
-      const TAP_MOVEMENT_THRESHOLD = 25; // pixels
+      const TAP_DURATION_THRESHOLD = 250;
+      const TAP_MOVEMENT_THRESHOLD = 25;
 
-      // Keyboard listeners
       window.addEventListener("keydown", (e) => {
         if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a")
           keys.left = true;
@@ -146,7 +146,6 @@
           keys.up = false;
       });
 
-      // Touch listeners
       canvas.addEventListener(
         "touchstart",
         (e) => {
@@ -206,7 +205,6 @@
               const distanceMoved = Math.sqrt(
                 deltaX * deltaX + deltaY * deltaY
               );
-
               if (
                 touchDuration < TAP_DURATION_THRESHOLD &&
                 distanceMoved < TAP_MOVEMENT_THRESHOLD
@@ -221,14 +219,12 @@
           }
         }
       };
-
       canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
       canvas.addEventListener("touchcancel", handleTouchEnd, {
         passive: false,
       });
 
       function drawPlayer() {
-        // Draw square body
         ctx.fillStyle = player.color;
         ctx.fillRect(
           player.x - player.size / 2,
@@ -236,14 +232,10 @@
           player.size,
           player.size
         );
-
-        // Eyes (adjusted for square)
-        const eyeRadius = player.size * 0.15; // Proportional to player.size
-        const eyeOffsetX = player.size * 0.2; // Proportional to player.size
-        const eyeOffsetY = player.size * 0.075; // Positioned slightly up from center
-
+        const eyeRadius = player.size * 0.15;
+        const eyeOffsetX = player.size * 0.2;
+        const eyeOffsetY = player.size * 0.075;
         ctx.fillStyle = player.eyeColor;
-        // Left Eye
         ctx.beginPath();
         ctx.arc(
           player.x - eyeOffsetX,
@@ -254,7 +246,6 @@
         );
         ctx.fill();
         ctx.closePath();
-        // Right Eye
         ctx.beginPath();
         ctx.arc(
           player.x + eyeOffsetX,
@@ -265,15 +256,14 @@
         );
         ctx.fill();
         ctx.closePath();
-
         const pupilRadius = eyeRadius * 0.5;
         let pupilLookOffset = 0;
-        if (player.vx > 0.5) pupilLookOffset = eyeRadius * 0.3;
-        else if (player.vx < -0.5) pupilLookOffset = -eyeRadius * 0.3;
+        if (player.vx > 0.5 * PER_FRAME_TO_PER_SECOND * 0.1)
+          pupilLookOffset = eyeRadius * 0.3; // Adjusted threshold
+        else if (player.vx < -0.5 * PER_FRAME_TO_PER_SECOND * 0.1)
+          pupilLookOffset = -eyeRadius * 0.3; // Adjusted threshold
         const pupilOffsetY = 0;
-
         ctx.fillStyle = player.pupilColor;
-        // Left Pupil
         ctx.beginPath();
         ctx.arc(
           player.x - eyeOffsetX + pupilLookOffset,
@@ -284,7 +274,6 @@
         );
         ctx.fill();
         ctx.closePath();
-        // Right Pupil
         ctx.beginPath();
         ctx.arc(
           player.x + eyeOffsetX + pupilLookOffset,
@@ -297,52 +286,69 @@
         ctx.closePath();
       }
 
-      function updatePlayer() {
-        if (keys.left) player.vx -= player.moveSpeed;
-        if (keys.right) player.vx += player.moveSpeed;
+      function updatePlayer(dt) {
+        // dt is delta time in seconds
+        // Horizontal movement (acceleration)
+        if (keys.left) player.vx -= player.moveSpeed * dt;
+        if (keys.right) player.vx += player.moveSpeed * dt;
 
-        if (player.onGround) player.vx *= groundFriction;
-        else player.vx *= friction;
+        // Apply friction
+        if (player.onGround) {
+          player.vx *= Math.pow(groundFrictionFactor, dt * TARGET_FPS);
+        } else {
+          player.vx *= Math.pow(airFrictionFactor, dt * TARGET_FPS);
+        }
 
+        // Clamp horizontal speed
         player.vx = Math.max(
           -player.maxSpeedX,
           Math.min(player.maxSpeedX, player.vx)
         );
-        player.vy += gravity;
+
+        // Apply gravity (acceleration)
+        player.vy += gravity * dt;
 
         player.isTouchingWall = false;
         player.wallDirection = 0;
 
-        // Wall collisions (using player.size / 2)
-        if (player.x - player.size / 2 <= 0) {
-          player.x = player.size / 2;
+        // Tentative next position
+        let nextX = player.x + player.vx * dt;
+        let nextY = player.y + player.vy * dt;
+
+        // Wall collisions
+        if (nextX - player.size / 2 <= 0) {
+          nextX = player.size / 2;
           if (player.vx < 0) player.vx = 0;
           player.isTouchingWall = true;
           player.wallDirection = -1;
-        } else if (player.x + player.size / 2 >= canvas.width) {
-          player.x = canvas.width - player.size / 2;
+        } else if (nextX + player.size / 2 >= canvas.width) {
+          nextX = canvas.width - player.size / 2;
           if (player.vx > 0) player.vx = 0;
           player.isTouchingWall = true;
           player.wallDirection = 1;
         }
 
+        // Jump logic
         if (keyUpJustPressed) {
           if (player.onGround) {
-            player.vy = -player.jumpForce;
+            player.vy = -player.jumpForce; // Directly set vertical velocity
           } else if (player.isTouchingWall && !player.onGround) {
             player.vy = -player.wallJumpForceY;
             player.vx = -player.wallDirection * player.wallJumpForceX;
           }
         }
+        keyUpJustPressed = false; // Reset after processing
 
+        // Wall slide
         if (player.isTouchingWall && !player.onGround && player.vy > 0) {
-          player.vy = Math.min(player.vy, player.wallSlideSpeed);
+          player.vy = Math.min(player.vy, player.wallSlideSpeed); // Clamp slide speed
         }
 
-        player.x += player.vx;
-        player.y += player.vy;
+        // Update position (apply velocities)
+        player.x = nextX; // Use the collision-adjusted nextX
+        player.y += player.vy * dt; // Update Y separately for now, ground check will correct
 
-        // Ground collision (using player.size / 2)
+        // Ground collision
         if (player.y + player.size / 2 > canvas.height) {
           player.y = canvas.height - player.size / 2;
           player.vy = 0;
@@ -351,46 +357,49 @@
           player.onGround = false;
         }
 
-        // Ceiling collision (using player.size / 2)
+        // Ceiling collision
         if (player.y - player.size / 2 < 0) {
           player.y = player.size / 2;
-          if (player.vy < 0) player.vy *= -0.2;
+          if (player.vy < 0) player.vy *= -0.2; // Small bounce
         }
-
-        keyUpJustPressed = false;
       }
 
-      function manageTail() {
-        tailSpawnCounter++;
+      function manageTail(dt) {
+        tailSpawnTimer += dt;
         const speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-        if (speed > 0.5 && tailSpawnCounter >= TAIL_SPAWN_INTERVAL) {
+
+        // Check if it's time to spawn a new particle based on speed and interval
+        if (
+          speed > 0.5 * PER_FRAME_TO_PER_SECOND * 0.1 &&
+          tailSpawnTimer >= TAIL_SPAWN_INTERVAL_SECONDS
+        ) {
           tailParticles.push({
             x: player.x,
             y: player.y,
-            radius: (player.size / 2) * 0.8, // Particle radius based on player size
-            originalRadius: (player.size / 2),
+            radius: (player.size / 2) * 0.8,
+            originalRadius: (player.size / 2) * 0.8,
             color: player.color,
-            life: TAIL_LIFETIME,
-            maxLife: TAIL_LIFETIME,
+            life: TAIL_LIFETIME_SECONDS, // Life is now in seconds
+            maxLife: TAIL_LIFETIME_SECONDS,
           });
-          tailSpawnCounter = 0;
+          tailSpawnTimer = 0; // Reset timer
         }
         if (tailParticles.length > MAX_TAIL_PARTICLES) tailParticles.shift();
 
         for (let i = tailParticles.length - 1; i >= 0; i--) {
           const p = tailParticles[i];
-          p.life--;
+          p.life -= dt; // Decrease life by delta time
           if (p.life <= 0) {
             tailParticles.splice(i, 1);
           } else {
             ctx.beginPath();
             const currentRadius = p.originalRadius * (p.life / p.maxLife);
             const currentAlpha = 0.8 * (p.life / p.maxLife);
-            ctx.arc(p.x, p.y, Math.max(0, currentRadius), 0, Math.PI * 2); // Tail particles are still circles
+            ctx.arc(p.x, p.y, Math.max(0, currentRadius), 0, Math.PI * 2);
             const rgb = hexToRgb(p.color);
             if (rgb)
               ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha})`;
-            else ctx.fillStyle = `rgba(0, 255, 0, ${currentAlpha})`; // Fallback to green if hex fails
+            else ctx.fillStyle = `rgba(0, 255, 0, ${currentAlpha})`;
             ctx.fill();
             ctx.closePath();
           }
@@ -408,14 +417,32 @@
         return { r, g, b };
       }
 
-      function gameLoop() {
+      let lastTime = 0;
+      function gameLoop(currentTime) {
+        // Convert timestamp to seconds for convenience
+        currentTime /= 1000;
+        if (lastTime === 0) {
+          // First frame initialization
+          lastTime = currentTime;
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        const dt = currentTime - lastTime;
+        lastTime = currentTime;
+
+        // --- Game simulation cap / panic ---
+        // if (dt > 1/15) { // if frame takes longer than 1/15th of a second (e.g. tab was inactive)
+        //     dt = 1/15;   // clamp dt to avoid huge jumps
+        // }
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        updatePlayer();
-        manageTail();
+        updatePlayer(dt);
+        manageTail(dt); // Pass dt to tail management
         drawPlayer();
         requestAnimationFrame(gameLoop);
       }
-      gameLoop();
+      requestAnimationFrame(gameLoop); // Start the loop
     </script>
   </body>
 </html>
