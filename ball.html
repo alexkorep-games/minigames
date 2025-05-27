@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Bouncing Ball with Wall Jump & Touch</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #333;
+        display: flex;
+        flex-direction: column; /* Allow controls text above canvas */
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        font-family: sans-serif;
+        color: white;
+        -webkit-user-select: none; /* Disable text selection */
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+      }
+      canvas {
+        border: 1px solid #555;
+        background-color: #282c34;
+        touch-action: none; /* Crucial for preventing default touch actions like pan/zoom on the canvas */
+      }
+      #controls-info {
+        /* Renamed from #controls to avoid conflict */
+        /* position: absolute;
+            top: 10px;
+            left: 10px; */
+        background-color: rgba(0, 0, 0, 0.7);
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px; /* Space between info and canvas */
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+
+      // Canvas setup
+      canvas.width = Math.min(window.innerWidth * 0.9, 800); // Responsive width
+      canvas.height = Math.min(window.innerHeight * 0.7, 600); // Responsive height
+
+      let canvasRect = canvas.getBoundingClientRect(); // Get initial dimensions
+
+      window.addEventListener("resize", () => {
+        canvas.width = Math.min(window.innerWidth * 0.9, 800);
+        canvas.height = Math.min(window.innerHeight * 0.7, 600);
+        canvasRect = canvas.getBoundingClientRect(); // Update on resize
+        // Re-center ball if needed, or ensure it's within new bounds
+        if (ball.x > canvas.width - ball.radius)
+          ball.x = canvas.width - ball.radius;
+        if (ball.y > canvas.height - ball.radius)
+          ball.y = canvas.height - ball.radius;
+      });
+
+      // Ball properties
+      const ball = {
+        x: canvas.width / 2,
+        y: canvas.height - 100,
+        radius: 20,
+        color: "#FF0000",
+        eyeColor: "white",
+        pupilColor: "black",
+        vx: 0,
+        vy: 0,
+        mass: 1,
+        jumpForce: 13,
+        moveSpeed: 0.8,
+        maxSpeedX: 7,
+        onGround: false,
+        isTouchingWall: false,
+        wallDirection: 0,
+        wallSlideSpeed: 1.5,
+        wallJumpForceX: 8,
+        wallJumpForceY: 12,
+      };
+
+      // Environment
+      const gravity = 0.6;
+      const friction = 0.9;
+      const groundFriction = 0.85;
+
+      // Tail particles
+      let tailParticles = [];
+      const MAX_TAIL_PARTICLES = 60;
+      const TAIL_LIFETIME = 30;
+      const TAIL_SPAWN_INTERVAL = 1;
+      let tailSpawnCounter = 0;
+
+      // Input handling
+      const keys = { left: false, right: false, up: false };
+      let keyUpJustPressed = false;
+
+      // Touch handling variables
+      let activeTouchId = null;
+      let touchStartX = 0;
+      let touchStartY = 0; // Keep Y for more precise tap movement check
+      let touchStartTime = 0;
+      const TAP_DURATION_THRESHOLD = 250; // ms
+      const TAP_MOVEMENT_THRESHOLD = 25; // pixels (total movement for tap)
+
+      // Keyboard listeners
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a")
+          keys.left = true;
+        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d")
+          keys.right = true;
+        if (
+          e.key === "ArrowUp" ||
+          e.key.toLowerCase() === "w" ||
+          e.key === " "
+        ) {
+          if (!keys.up) keyUpJustPressed = true;
+          keys.up = true;
+        }
+      });
+      window.addEventListener("keyup", (e) => {
+        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a")
+          keys.left = false;
+        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d")
+          keys.right = false;
+        if (e.key === "ArrowUp" || e.key.toLowerCase() === "w" || e.key === " ")
+          keys.up = false;
+      });
+
+      // Touch listeners for the canvas
+      canvas.addEventListener(
+        "touchstart",
+        (e) => {
+          e.preventDefault(); // Important to prevent default browser actions
+          if (activeTouchId === null) {
+            // Process only the first touch
+            const touch = e.changedTouches[0];
+            activeTouchId = touch.identifier;
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchStartTime = Date.now();
+
+            // Determine movement based on touch half relative to canvas
+            if (touch.clientX < canvasRect.left + canvas.width / 2) {
+              keys.left = true;
+              keys.right = false;
+            } else {
+              keys.right = true;
+              keys.left = false;
+            }
+          }
+        },
+        { passive: false }
+      ); // passive: false allows preventDefault
+
+      canvas.addEventListener(
+        "touchmove",
+        (e) => {
+          e.preventDefault();
+          if (activeTouchId !== null) {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              const touch = e.changedTouches[i];
+              if (touch.identifier === activeTouchId) {
+                // Update movement direction if finger slides across the screen midpoint
+                if (touch.clientX < canvasRect.left + canvas.width / 2) {
+                  keys.left = true;
+                  keys.right = false;
+                } else {
+                  keys.right = true;
+                  keys.left = false;
+                }
+                break; // Found the active touch
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      const handleTouchEnd = (e) => {
+        e.preventDefault();
+        if (activeTouchId !== null) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === activeTouchId) {
+              const touchEndX = touch.clientX;
+              const touchEndY = touch.clientY;
+              const touchDuration = Date.now() - touchStartTime;
+
+              const deltaX = touchEndX - touchStartX;
+              const deltaY = touchEndY - touchStartY;
+              const distanceMoved = Math.sqrt(
+                deltaX * deltaX + deltaY * deltaY
+              );
+
+              if (
+                touchDuration < TAP_DURATION_THRESHOLD &&
+                distanceMoved < TAP_MOVEMENT_THRESHOLD
+              ) {
+                keyUpJustPressed = true; // This will trigger a jump
+              }
+
+              // Reset movement keys and active touch
+              keys.left = false;
+              keys.right = false;
+              activeTouchId = null;
+              break; // Found the active touch
+            }
+          }
+        }
+      };
+
+      canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+      canvas.addEventListener("touchcancel", handleTouchEnd, {
+        passive: false,
+      }); // Handle cancels too
+
+      function drawBall() {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ball.color;
+        ctx.fill();
+        ctx.closePath();
+
+        const eyeRadius = ball.radius * 0.3;
+        const eyeOffsetX = ball.radius * 0.4;
+        const eyeOffsetY = ball.radius * 0.15;
+        ctx.fillStyle = ball.eyeColor;
+        ctx.beginPath();
+        ctx.arc(
+          ball.x - eyeOffsetX,
+          ball.y - eyeOffsetY,
+          eyeRadius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.closePath();
+        ctx.beginPath();
+        ctx.arc(
+          ball.x + eyeOffsetX,
+          ball.y - eyeOffsetY,
+          eyeRadius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.closePath();
+
+        const pupilRadius = eyeRadius * 0.5;
+        let pupilLookOffset = 0;
+        if (ball.vx > 0.5) pupilLookOffset = eyeRadius * 0.3;
+        else if (ball.vx < -0.5) pupilLookOffset = -eyeRadius * 0.3;
+        const pupilOffsetY = 0;
+        ctx.fillStyle = ball.pupilColor;
+        ctx.beginPath();
+        ctx.arc(
+          ball.x - eyeOffsetX + pupilLookOffset,
+          ball.y - eyeOffsetY + pupilOffsetY,
+          pupilRadius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.closePath();
+        ctx.beginPath();
+        ctx.arc(
+          ball.x + eyeOffsetX + pupilLookOffset,
+          ball.y - eyeOffsetY + pupilOffsetY,
+          pupilRadius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.closePath();
+      }
+
+      function updateBall() {
+        if (keys.left) ball.vx -= ball.moveSpeed;
+        if (keys.right) ball.vx += ball.moveSpeed;
+
+        if (ball.onGround) ball.vx *= groundFriction;
+        else ball.vx *= friction;
+
+        ball.vx = Math.max(-ball.maxSpeedX, Math.min(ball.maxSpeedX, ball.vx));
+        ball.vy += gravity;
+
+        ball.isTouchingWall = false;
+        ball.wallDirection = 0;
+
+        if (ball.x - ball.radius <= 0) {
+          ball.x = ball.radius;
+          if (ball.vx < 0) ball.vx = 0;
+          ball.isTouchingWall = true;
+          ball.wallDirection = -1;
+        } else if (ball.x + ball.radius >= canvas.width) {
+          ball.x = canvas.width - ball.radius;
+          if (ball.vx > 0) ball.vx = 0;
+          ball.isTouchingWall = true;
+          ball.wallDirection = 1;
+        }
+
+        if (keyUpJustPressed) {
+          if (ball.onGround) {
+            ball.vy = -ball.jumpForce;
+          } else if (ball.isTouchingWall && !ball.onGround) {
+            ball.vy = -ball.wallJumpForceY;
+            ball.vx = -ball.wallDirection * ball.wallJumpForceX;
+          }
+        }
+
+        if (ball.isTouchingWall && !ball.onGround && ball.vy > 0) {
+          ball.vy = Math.min(ball.vy, ball.wallSlideSpeed);
+        }
+
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+
+        if (ball.y + ball.radius > canvas.height) {
+          ball.y = canvas.height - ball.radius;
+          ball.vy = 0;
+          ball.onGround = true;
+        } else {
+          ball.onGround = false;
+        }
+
+        if (ball.y - ball.radius < 0) {
+          ball.y = ball.radius;
+          if (ball.vy < 0) ball.vy *= -0.2;
+        }
+
+        keyUpJustPressed = false;
+      }
+
+      function manageTail() {
+        tailSpawnCounter++;
+        const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+        if (speed > 0.5 && tailSpawnCounter >= TAIL_SPAWN_INTERVAL) {
+          tailParticles.push({
+            x: ball.x,
+            y: ball.y,
+            radius: ball.radius * 0.8,
+            originalRadius: ball.radius * 0.8,
+            color: ball.color,
+            life: TAIL_LIFETIME,
+            maxLife: TAIL_LIFETIME,
+          });
+          tailSpawnCounter = 0;
+        }
+        if (tailParticles.length > MAX_TAIL_PARTICLES) tailParticles.shift();
+
+        for (let i = tailParticles.length - 1; i >= 0; i--) {
+          const p = tailParticles[i];
+          p.life--;
+          if (p.life <= 0) {
+            tailParticles.splice(i, 1);
+          } else {
+            ctx.beginPath();
+            const currentRadius = p.originalRadius * (p.life / p.maxLife);
+            const currentAlpha = 0.8 * (p.life / p.maxLife);
+            ctx.arc(p.x, p.y, Math.max(0, currentRadius), 0, Math.PI * 2);
+            const rgb = hexToRgb(p.color);
+            if (rgb)
+              ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha})`;
+            else ctx.fillStyle = `rgba(255, 0, 0, ${currentAlpha})`;
+            ctx.fill();
+            ctx.closePath();
+          }
+        }
+      }
+
+      function hexToRgb(hex) {
+        if (!hex) return null;
+        const localHex = hex.startsWith("#") ? hex.slice(1) : hex;
+        if (localHex.length !== 6) return null;
+        const r = parseInt(localHex.substring(0, 2), 16);
+        const g = parseInt(localHex.substring(2, 4), 16);
+        const b = parseInt(localHex.substring(4, 6), 16);
+        if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+        return { r, g, b };
+      }
+
+      function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        updateBall();
+        manageTail();
+        drawBall();
+        requestAnimationFrame(gameLoop);
+      }
+      gameLoop();
+    </script>
+  </body>
+</html>
