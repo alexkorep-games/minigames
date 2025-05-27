@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Glowing Fish School</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #001529; /* Dark blue background */
+            touch-action: none; /* Prevent default touch behaviors like scrolling */
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="fishCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('fishCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let fishes = [];
+        const NUM_FISH = 70; // Number of fish in the school
+        const FISH_SIZE_MIN = 2;
+        const FISH_SIZE_MAX = 5;
+        const MAX_SPEED = 2;
+        const MAX_FORCE = 0.05; // Steering force
+
+        // Boids parameters
+        const PERCEPTION_RADIUS = 70;
+        const SEPARATION_RADIUS = 30; // How close before actively avoiding other fish
+        const COHESION_FORCE_WEIGHT = 1.0;
+        const ALIGNMENT_FORCE_WEIGHT = 1.2;
+        const SEPARATION_FORCE_WEIGHT = 1.8;
+
+        // Touch interaction parameters
+        let touchPoints = []; // {x, y, id}
+        const TOUCH_AVOID_RADIUS = 150;
+        const TOUCH_AVOID_FORCE = 0.5; // This is a multiplier for the avoidance strength
+
+        // Glowing effect
+        const GLOW_COLOR = 'rgba(0, 220, 255, 0.8)'; // Bright cyan
+        const GLOW_BLUR = 15;
+
+        class Vector {
+            constructor(x = 0, y = 0) {
+                this.x = x;
+                this.y = y;
+            }
+
+            add(v) {
+                this.x += v.x;
+                this.y += v.y;
+                return this;
+            }
+
+            sub(v) {
+                this.x -= v.x;
+                this.y -= v.y;
+                return this;
+            }
+
+            mult(scalar) {
+                this.x *= scalar;
+                this.y *= scalar;
+                return this;
+            }
+
+            div(scalar) {
+                if (scalar !== 0) {
+                    this.x /= scalar;
+                    this.y /= scalar;
+                }
+                return this;
+            }
+
+            mag() {
+                return Math.sqrt(this.x * this.x + this.y * this.y);
+            }
+
+            normalize() {
+                const m = this.mag();
+                if (m !== 0) {
+                    this.div(m);
+                }
+                return this;
+            }
+
+            limit(max) {
+                const mSq = this.x * this.x + this.y * this.y;
+                if (mSq > max * max) {
+                    this.normalize().mult(max);
+                }
+                return this;
+            }
+
+            static dist(v1, v2) {
+                const dx = v1.x - v2.x;
+                const dy = v1.y - v2.y;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+        }
+
+        class Fish {
+            constructor(x, y) {
+                this.position = new Vector(x, y);
+                this.velocity = new Vector(Math.random() * 2 - 1, Math.random() * 2 - 1);
+                this.velocity.normalize().mult(Math.random() * MAX_SPEED * 0.5 + MAX_SPEED * 0.5);
+                this.acceleration = new Vector();
+                this.maxSpeed = MAX_SPEED + (Math.random() - 0.5) * 0.2; // Slight variation
+                this.maxForce = MAX_FORCE + (Math.random() - 0.5) * 0.01;
+                this.size = Math.random() * (FISH_SIZE_MAX - FISH_SIZE_MIN) + FISH_SIZE_MIN;
+                
+                const r = 0; 
+                const g = Math.floor(180 + Math.random() * 75);
+                const b = Math.floor(200 + Math.random() * 55);
+                this.color = `rgb(${r},${g},${b})`;
+            }
+
+            applyForce(force) {
+                this.acceleration.add(force);
+            }
+
+            // --- Boids Behaviors ---
+            align(others) {
+                let steering = new Vector();
+                let total = 0;
+                for (let other of others) {
+                    const d = Vector.dist(this.position, other.position);
+                    if (other !== this && d < PERCEPTION_RADIUS) {
+                        steering.add(other.velocity);
+                        total++;
+                    }
+                }
+                if (total > 0) {
+                    steering.div(total);
+                    steering.normalize().mult(this.maxSpeed);
+                    steering.sub(this.velocity);
+                    steering.limit(this.maxForce);
+                }
+                return steering;
+            }
+
+            cohesion(others) {
+                let steering = new Vector();
+                let total = 0;
+                for (let other of others) {
+                    const d = Vector.dist(this.position, other.position);
+                    if (other !== this && d < PERCEPTION_RADIUS) {
+                        steering.add(other.position);
+                        total++;
+                    }
+                }
+                if (total > 0) {
+                    steering.div(total); // Average position
+                    steering.sub(this.position); // Vector from this to average
+                    steering.normalize().mult(this.maxSpeed);
+                    steering.sub(this.velocity); // Steering force
+                    steering.limit(this.maxForce);
+                }
+                return steering;
+            }
+
+            separation(others) {
+                let steering = new Vector();
+                let total = 0;
+                for (let other of others) {
+                    const d = Vector.dist(this.position, other.position);
+                    if (other !== this && d < SEPARATION_RADIUS && d > 0) {
+                        // *** THIS IS THE CORRECTED PART ***
+                        // Calculate vector pointing from other fish to this fish
+                        let diff = new Vector(this.position.x - other.position.x, this.position.y - other.position.y);
+                        
+                        diff.normalize();
+                        diff.div(d); // Weight by distance (closer = stronger repulsion because 1/d)
+                        steering.add(diff);
+                        total++;
+                    }
+                }
+                if (total > 0) {
+                    steering.div(total); // Average the steering vector
+                    // Set desired velocity from steering
+                    steering.normalize().mult(this.maxSpeed);
+                    // Calculate steering force = desired - velocity
+                    steering.sub(this.velocity);
+                    steering.limit(this.maxForce);
+                }
+                return steering;
+            }
+
+            // --- Touch Avoidance ---
+            avoid(targets) {
+                let steering = new Vector();
+                for (let target of targets) {
+                    const targetPos = new Vector(target.x, target.y);
+                    const d = Vector.dist(this.position, targetPos);
+                    if (d < TOUCH_AVOID_RADIUS && d > 0) { // d > 0 to avoid issues if touch is exactly on fish
+                        // Vector pointing from target to this fish (i.e., away from target)
+                        let diff = new Vector(this.position.x - targetPos.x, this.position.y - targetPos.y);
+                        // Strength of repulsion is inversely proportional to distance from edge of radius,
+                        // and proportional to TOUCH_AVOID_FORCE.
+                        // (TOUCH_AVOID_RADIUS - d) / TOUCH_AVOID_RADIUS gives a value from near 0 (at edge) to 1 (at center of touch)
+                        // diff.normalize().mult( (TOUCH_AVOID_RADIUS - d) / d ); // Alternative: stronger repulsion closer
+                        // diff.normalize().mult(1/d); // another alternative
+                        let strength = TOUCH_AVOID_FORCE * (TOUCH_AVOID_RADIUS - d) / TOUCH_AVOID_RADIUS;
+                        diff.normalize().mult(strength);
+                        steering.add(diff);
+                    }
+                }
+                 if (steering.mag() > 0) { 
+                    // Convert accumulated directional preference into a steering force
+                    steering.normalize().mult(this.maxSpeed * 1.5); // Desired velocity for avoidance (stronger)
+                    steering.sub(this.velocity); // Steering force = desired - current
+                    steering.limit(this.maxForce * 2.5); // Stronger limit for avoidance force
+                }
+                return steering;
+            }
+
+
+            flock(allFishes, touchPoints) {
+                let separationForce = this.separation(allFishes).mult(SEPARATION_FORCE_WEIGHT);
+                let alignmentForce = this.align(allFishes).mult(ALIGNMENT_FORCE_WEIGHT);
+                let cohesionForce = this.cohesion(allFishes).mult(COHESION_FORCE_WEIGHT);
+                let avoidanceForce = this.avoid(touchPoints); 
+
+                this.applyForce(separationForce);
+                this.applyForce(alignmentForce);
+                this.applyForce(cohesionForce);
+                this.applyForce(avoidanceForce);
+            }
+
+            update() {
+                this.velocity.add(this.acceleration);
+                this.velocity.limit(this.maxSpeed);
+                this.position.add(this.velocity);
+                this.acceleration.mult(0); // Reset acceleration each frame
+
+                // Screen wrapping
+                const padding = this.size * 2; // Give a bit more padding before wrapping
+                if (this.position.x > width + padding) this.position.x = -padding;
+                if (this.position.x < -padding) this.position.x = width + padding;
+                if (this.position.y > height + padding) this.position.y = -padding;
+                if (this.position.y < -padding) this.position.y = height + padding;
+            }
+
+            draw(ctx) {
+                ctx.save(); // Save current context state
+                ctx.translate(this.position.x, this.position.y);
+                // Rotate fish to face direction of movement
+                ctx.rotate(Math.atan2(this.velocity.y, this.velocity.x));
+
+                ctx.beginPath();
+                // Draw a more fish-like shape (elongated ellipse or triangle)
+                // Simple circle for now, but this is where you'd change to a triangle/ellipse
+                ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                
+                ctx.shadowColor = GLOW_COLOR;
+                ctx.shadowBlur = GLOW_BLUR;
+                
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                ctx.restore(); // Restore context state (removes translation, rotation, shadow settings for next fish)
+            }
+        }
+
+        function setup() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+
+            fishes = [];
+            for (let i = 0; i < NUM_FISH; i++) {
+                fishes.push(new Fish(Math.random() * width, Math.random() * height));
+            }
+
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+            canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+            
+            isMouseDown = false; // Define here for mouse handlers
+            canvas.addEventListener('mousedown', handleMouseDown, false);
+            canvas.addEventListener('mousemove', handleMouseMove, false);
+            canvas.addEventListener('mouseup', handleMouseUp, false);
+            canvas.addEventListener('mouseleave', handleMouseUp, false);
+
+            animate();
+        }
+        
+        let isMouseDown = false; // Already defined above in setup for clarity.
+        const MOUSE_ID = -1; 
+
+        function handleMouseDown(event) {
+            isMouseDown = true;
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            touchPoints = touchPoints.filter(tp => tp.id !== MOUSE_ID);
+            touchPoints.push({ x: x, y: y, id: MOUSE_ID });
+        }
+
+        function handleMouseMove(event) {
+            if (isMouseDown) {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                let mousePoint = touchPoints.find(tp => tp.id === MOUSE_ID);
+                if (mousePoint) {
+                    mousePoint.x = x;
+                    mousePoint.y = y;
+                } else { 
+                    touchPoints.push({ x: x, y: y, id: MOUSE_ID });
+                }
+            }
+        }
+
+        function handleMouseUp(event) {
+            isMouseDown = false;
+            touchPoints = touchPoints.filter(tp => tp.id !== MOUSE_ID);
+        }
+
+
+        function handleTouchStart(event) {
+            event.preventDefault(); 
+            const rect = canvas.getBoundingClientRect();
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                // Ensure no duplicate IDs if a touchstart fires again for an existing touch
+                if (!touchPoints.find(p => p.id === touch.identifier)) {
+                    touchPoints.push({
+                        x: touch.clientX - rect.left,
+                        y: touch.clientY - rect.top,
+                        id: touch.identifier
+                    });
+                }
+            }
+        }
+
+        function handleTouchMove(event) {
+            event.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                let point = touchPoints.find(p => p.id === touch.identifier);
+                if (point) {
+                    point.x = touch.clientX - rect.left;
+                    point.y = touch.clientY - rect.top;
+                }
+            }
+        }
+
+        function handleTouchEnd(event) {
+            event.preventDefault();
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                touchPoints = touchPoints.filter(p => p.id !== touch.identifier);
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+
+            fishes.forEach(fish => {
+                fish.flock(fishes, touchPoints);
+                fish.update();
+                fish.draw(ctx);
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', () => {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        });
+
+        setup();
+    </script>
+</body>
+</html>
