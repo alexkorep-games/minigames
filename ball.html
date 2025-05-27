@@ -6,126 +6,165 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
-    <title>Bouncing Ball with Wall Jump & Touch</title>
+    <title>Infinite Bouncing Maze</title>
     <style>
       body {
         margin: 0;
         overflow: hidden;
-        background-color: #333;
+        background-color: #1e1e1e; /* Darker background */
         display: flex;
-        flex-direction: column; /* Allow controls text above canvas */
+        flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100vh;
-        font-family: sans-serif;
+        font-family: "Arial", sans-serif; /* More common font */
         color: white;
-        -webkit-user-select: none; /* Disable text selection */
+        -webkit-user-select: none;
         -moz-user-select: none;
         -ms-user-select: none;
         user-select: none;
-        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        -webkit-tap-highlight-color: transparent;
       }
       canvas {
-        border: 1px solid #555;
+        border: 2px solid #444; /* Slightly thicker border */
         background-color: #282c34;
-        touch-action: none; /* Crucial for preventing default touch actions like pan/zoom on the canvas */
+        touch-action: none;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5); /* Add a subtle shadow */
       }
-      #controls-info {
-        /* Renamed from #controls to avoid conflict */
-        /* position: absolute;
-            top: 10px;
-            left: 10px; */
-        background-color: rgba(0, 0, 0, 0.7);
+      #info-overlay {
+        /* For score and messages */
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
         padding: 10px;
+        box-sizing: border-box;
+        z-index: 10;
+      }
+      #controls-display {
+        /* Separate div for controls text */
+        margin-bottom: 10px;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 8px 15px;
         border-radius: 5px;
-        margin-bottom: 10px; /* Space between info and canvas */
+        font-size: 0.9em;
         text-align: center;
       }
     </style>
   </head>
   <body>
+    <div id="controls-display">
+      Controls: Arrow Keys/WASD to Move, Up/W/Space/Tap to Jump.
+    </div>
     <canvas id="gameCanvas"></canvas>
 
     <script>
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
 
-      // Canvas setup
-      canvas.width = Math.min(window.innerWidth * 0.9, 800); // Responsive width
-      canvas.height = Math.min(window.innerHeight * 0.7, 600); // Responsive height
+      canvas.width = Math.min(window.innerWidth * 0.9, 500); // Narrower for vertical feel
+      canvas.height = Math.min(window.innerHeight * 0.8, 700); // Taller
 
-      let canvasRect = canvas.getBoundingClientRect(); // Get initial dimensions
+      let canvasRect = canvas.getBoundingClientRect();
 
       window.addEventListener("resize", () => {
-        canvas.width = Math.min(window.innerWidth * 0.9, 800);
-        canvas.height = Math.min(window.innerHeight * 0.7, 600);
-        canvasRect = canvas.getBoundingClientRect(); // Update on resize
-        // Re-center ball if needed, or ensure it's within new bounds
-        if (ball.x > canvas.width - ball.radius)
-          ball.x = canvas.width - ball.radius;
-        if (ball.y > canvas.height - ball.radius)
-          ball.y = canvas.height - ball.radius;
+        canvas.width = Math.min(window.innerWidth * 0.9, 500);
+        canvas.height = Math.min(window.innerHeight * 0.8, 700);
+        canvasRect = canvas.getBoundingClientRect();
+        // No ball recentering needed here as it's relative to world
       });
 
-      // Ball properties
       const ball = {
         x: canvas.width / 2,
-        y: canvas.height - 100,
-        radius: 20,
-        color: "#FF0000",
+        y: 0, // Will be set in world coordinates
+        radius: 15, // Slightly smaller ball for maze navigation
+        color: "#FF4500", // OrangRed
         eyeColor: "white",
         pupilColor: "black",
         vx: 0,
         vy: 0,
         mass: 1,
-        jumpForce: 13,
-        moveSpeed: 0.8,
-        maxSpeedX: 7,
+        jumpForce: 12, // Adjusted jump force
+        moveSpeed: 0.7,
+        maxSpeedX: 6,
         onGround: false,
         isTouchingWall: false,
-        wallDirection: 0,
-        wallSlideSpeed: 1.5,
-        wallJumpForceX: 8,
-        wallJumpForceY: 12,
+        wallDirection: 0, // -1 for left wall, 1 for right wall
+        wallSlideSpeed: 1.2,
+        wallJumpForceX: 7,
+        wallJumpForceY: 11,
       };
 
-      // Environment
-      const gravity = 0.6;
-      const friction = 0.9;
-      const groundFriction = 0.85;
+      const gravity = 0.5;
+      const friction = 0.95; // Air friction
+      const groundFriction = 0.8; // Platform friction
 
-      // Tail particles
       let tailParticles = [];
-      const MAX_TAIL_PARTICLES = 60;
-      const TAIL_LIFETIME = 30;
-      const TAIL_SPAWN_INTERVAL = 1;
+      const MAX_TAIL_PARTICLES = 50;
+      const TAIL_LIFETIME = 25;
+      const TAIL_SPAWN_INTERVAL = 2; // Sparser tail
       let tailSpawnCounter = 0;
 
-      // Input handling
       const keys = { left: false, right: false, up: false };
       let keyUpJustPressed = false;
 
-      // Touch handling variables
       let activeTouchId = null;
       let touchStartX = 0;
-      let touchStartY = 0; // Keep Y for more precise tap movement check
+      let touchStartY = 0;
       let touchStartTime = 0;
-      const TAP_DURATION_THRESHOLD = 250; // ms
-      const TAP_MOVEMENT_THRESHOLD = 25; // pixels (total movement for tap)
+      const TAP_DURATION_THRESHOLD = 300;
+      const TAP_MOVEMENT_THRESHOLD = 30;
 
-      // Keyboard listeners
+      // Maze constants
+      const PLATFORM_HEIGHT = 18;
+      const PLATFORM_MIN_WIDTH = 70;
+      const PLATFORM_MAX_WIDTH = 180;
+      const PLATFORM_COLOR = "#607D8B"; // Bluish Grey
+      const PLATFORM_EDGE_COLOR = "#455A64"; // Darker edge
+      // Min/max vertical distance between the top of one platform and the top of the next
+      const MIN_VERTICAL_GAP = ball.radius * 3.5; // Enough space for ball to pass under
+      const MAX_VERTICAL_GAP =
+        ((ball.jumpForce * ball.jumpForce) / (2 * gravity)) * 0.7; // ~70% of max jump height
+
+      let platforms = [];
+      let worldOffsetY = 0; // Y-coordinate of the world that is at the top of the canvas. Decreases as player goes up.
+      let generatedUntilY = 0; // World Y-coordinate of the top surface of the highest platform generated.
+      let lastPlatformDetails = { x: 0, y: 0, width: 0 }; // To guide next platform generation
+
+      let score = 0;
+      let highScore = parseInt(
+        localStorage.getItem("infiniteMazeHighScore") || "0"
+      );
+
+      const GAME_STATE = {
+        START_SCREEN: "START_SCREEN",
+        PLAYING: "PLAYING",
+        GAME_OVER: "GAME_OVER",
+      };
+      let currentGameState = GAME_STATE.START_SCREEN;
+
+      // --- INPUT HANDLING (largely unchanged, minor adjustments if needed) ---
       window.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a")
-          keys.left = true;
-        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d")
-          keys.right = true;
-        if (
-          e.key === "ArrowUp" ||
-          e.key.toLowerCase() === "w" ||
-          e.key === " "
-        ) {
-          if (!keys.up) keyUpJustPressed = true;
-          keys.up = true;
+        if (currentGameState === GAME_STATE.PLAYING) {
+          if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a")
+            keys.left = true;
+          if (e.key === "ArrowRight" || e.key.toLowerCase() === "d")
+            keys.right = true;
+          if (
+            e.key === "ArrowUp" ||
+            e.key.toLowerCase() === "w" ||
+            e.key === " "
+          ) {
+            if (!keys.up) keyUpJustPressed = true;
+            keys.up = true;
+          }
+        } else if (e.key === " " || e.key === "Enter") {
+          if (
+            currentGameState === GAME_STATE.START_SCREEN ||
+            currentGameState === GAME_STATE.GAME_OVER
+          ) {
+            resetGame();
+          }
         }
       });
       window.addEventListener("keyup", (e) => {
@@ -137,41 +176,47 @@
           keys.up = false;
       });
 
-      // Touch listeners for the canvas
       canvas.addEventListener(
         "touchstart",
         (e) => {
-          e.preventDefault(); // Important to prevent default browser actions
-          if (activeTouchId === null) {
-            // Process only the first touch
-            const touch = e.changedTouches[0];
-            activeTouchId = touch.identifier;
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchStartTime = Date.now();
-
-            // Determine movement based on touch half relative to canvas
-            if (touch.clientX < canvasRect.left + canvas.width / 2) {
-              keys.left = true;
-              keys.right = false;
-            } else {
-              keys.right = true;
-              keys.left = false;
+          e.preventDefault();
+          if (currentGameState === GAME_STATE.PLAYING) {
+            if (activeTouchId === null) {
+              const touch = e.changedTouches[0];
+              activeTouchId = touch.identifier;
+              touchStartX = touch.clientX;
+              touchStartY = touch.clientY;
+              touchStartTime = Date.now();
+              if (touch.clientX < canvasRect.left + canvas.width / 2) {
+                keys.left = true;
+                keys.right = false;
+              } else {
+                keys.right = true;
+                keys.left = false;
+              }
             }
+          } else if (
+            currentGameState === GAME_STATE.START_SCREEN ||
+            currentGameState === GAME_STATE.GAME_OVER
+          ) {
+            // Any tap starts/restarts the game
+            resetGame();
           }
         },
         { passive: false }
-      ); // passive: false allows preventDefault
+      );
 
       canvas.addEventListener(
         "touchmove",
         (e) => {
           e.preventDefault();
-          if (activeTouchId !== null) {
+          if (
+            currentGameState === GAME_STATE.PLAYING &&
+            activeTouchId !== null
+          ) {
             for (let i = 0; i < e.changedTouches.length; i++) {
               const touch = e.changedTouches[i];
               if (touch.identifier === activeTouchId) {
-                // Update movement direction if finger slides across the screen midpoint
                 if (touch.clientX < canvasRect.left + canvas.width / 2) {
                   keys.left = true;
                   keys.right = false;
@@ -179,7 +224,7 @@
                   keys.right = true;
                   keys.left = false;
                 }
-                break; // Found the active touch
+                break;
               }
             }
           }
@@ -189,14 +234,13 @@
 
       const handleTouchEnd = (e) => {
         e.preventDefault();
-        if (activeTouchId !== null) {
+        if (currentGameState === GAME_STATE.PLAYING && activeTouchId !== null) {
           for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (touch.identifier === activeTouchId) {
               const touchEndX = touch.clientX;
               const touchEndY = touch.clientY;
               const touchDuration = Date.now() - touchStartTime;
-
               const deltaX = touchEndX - touchStartX;
               const deltaY = touchEndY - touchStartY;
               const distanceMoved = Math.sqrt(
@@ -207,27 +251,26 @@
                 touchDuration < TAP_DURATION_THRESHOLD &&
                 distanceMoved < TAP_MOVEMENT_THRESHOLD
               ) {
-                keyUpJustPressed = true; // This will trigger a jump
+                keyUpJustPressed = true;
               }
-
-              // Reset movement keys and active touch
               keys.left = false;
               keys.right = false;
               activeTouchId = null;
-              break; // Found the active touch
+              break;
             }
           }
         }
       };
-
       canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
       canvas.addEventListener("touchcancel", handleTouchEnd, {
         passive: false,
-      }); // Handle cancels too
+      });
 
+      // --- DRAWING FUNCTIONS ---
       function drawBall() {
+        const screenY = ball.y - worldOffsetY;
         ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.arc(ball.x, screenY, ball.radius, 0, Math.PI * 2);
         ctx.fillStyle = ball.color;
         ctx.fill();
         ctx.closePath();
@@ -239,118 +282,71 @@
         ctx.beginPath();
         ctx.arc(
           ball.x - eyeOffsetX,
-          ball.y - eyeOffsetY,
+          screenY - eyeOffsetY,
           eyeRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
         ctx.beginPath();
         ctx.arc(
           ball.x + eyeOffsetX,
-          ball.y - eyeOffsetY,
+          screenY - eyeOffsetY,
           eyeRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
 
         const pupilRadius = eyeRadius * 0.5;
         let pupilLookOffset = 0;
         if (ball.vx > 0.5) pupilLookOffset = eyeRadius * 0.3;
         else if (ball.vx < -0.5) pupilLookOffset = -eyeRadius * 0.3;
-        const pupilOffsetY = 0;
+        const pupilOffsetY = 0; // Can add vertical look based on ball.vy if desired
         ctx.fillStyle = ball.pupilColor;
         ctx.beginPath();
         ctx.arc(
           ball.x - eyeOffsetX + pupilLookOffset,
-          ball.y - eyeOffsetY + pupilOffsetY,
+          screenY - eyeOffsetY + pupilOffsetY,
           pupilRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
         ctx.beginPath();
         ctx.arc(
           ball.x + eyeOffsetX + pupilLookOffset,
-          ball.y - eyeOffsetY + pupilOffsetY,
+          screenY - eyeOffsetY + pupilOffsetY,
           pupilRadius,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.closePath();
       }
 
-      function updateBall() {
-        if (keys.left) ball.vx -= ball.moveSpeed;
-        if (keys.right) ball.vx += ball.moveSpeed;
-
-        if (ball.onGround) ball.vx *= groundFriction;
-        else ball.vx *= friction;
-
-        ball.vx = Math.max(-ball.maxSpeedX, Math.min(ball.maxSpeedX, ball.vx));
-        ball.vy += gravity;
-
-        ball.isTouchingWall = false;
-        ball.wallDirection = 0;
-
-        if (ball.x - ball.radius <= 0) {
-          ball.x = ball.radius;
-          if (ball.vx < 0) ball.vx = 0;
-          ball.isTouchingWall = true;
-          ball.wallDirection = -1;
-        } else if (ball.x + ball.radius >= canvas.width) {
-          ball.x = canvas.width - ball.radius;
-          if (ball.vx > 0) ball.vx = 0;
-          ball.isTouchingWall = true;
-          ball.wallDirection = 1;
-        }
-
-        if (keyUpJustPressed) {
-          if (ball.onGround) {
-            ball.vy = -ball.jumpForce;
-          } else if (ball.isTouchingWall && !ball.onGround) {
-            ball.vy = -ball.wallJumpForceY;
-            ball.vx = -ball.wallDirection * ball.wallJumpForceX;
+      function drawPlatforms() {
+        for (const p of platforms) {
+          const screenY = p.y - worldOffsetY;
+          // Only draw if platform is within screen bounds (with a small buffer)
+          if (screenY + p.height > -50 && screenY < canvas.height + 50) {
+            ctx.fillStyle = p.color || PLATFORM_COLOR;
+            ctx.fillRect(p.x, screenY, p.width, p.height);
+            ctx.fillStyle = PLATFORM_EDGE_COLOR;
+            ctx.fillRect(p.x, screenY, p.width, 3); // Top edge highlight
           }
         }
-
-        if (ball.isTouchingWall && !ball.onGround && ball.vy > 0) {
-          ball.vy = Math.min(ball.vy, ball.wallSlideSpeed);
-        }
-
-        ball.x += ball.vx;
-        ball.y += ball.vy;
-
-        if (ball.y + ball.radius > canvas.height) {
-          ball.y = canvas.height - ball.radius;
-          ball.vy = 0;
-          ball.onGround = true;
-        } else {
-          ball.onGround = false;
-        }
-
-        if (ball.y - ball.radius < 0) {
-          ball.y = ball.radius;
-          if (ball.vy < 0) ball.vy *= -0.2;
-        }
-
-        keyUpJustPressed = false;
       }
 
       function manageTail() {
         tailSpawnCounter++;
         const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-        if (speed > 0.5 && tailSpawnCounter >= TAIL_SPAWN_INTERVAL) {
+        if (speed > 1 && tailSpawnCounter >= TAIL_SPAWN_INTERVAL) {
+          // Only spawn if moving significantly
           tailParticles.push({
             x: ball.x,
-            y: ball.y,
-            radius: ball.radius * 0.8,
-            originalRadius: ball.radius * 0.8,
+            y: ball.y, // Store world Y
+            radius: ball.radius * 0.7,
+            originalRadius: ball.radius * 0.7,
             color: ball.color,
             life: TAIL_LIFETIME,
             maxLife: TAIL_LIFETIME,
@@ -365,16 +361,20 @@
           if (p.life <= 0) {
             tailParticles.splice(i, 1);
           } else {
-            ctx.beginPath();
-            const currentRadius = p.originalRadius * (p.life / p.maxLife);
-            const currentAlpha = 0.8 * (p.life / p.maxLife);
-            ctx.arc(p.x, p.y, Math.max(0, currentRadius), 0, Math.PI * 2);
-            const rgb = hexToRgb(p.color);
-            if (rgb)
-              ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha})`;
-            else ctx.fillStyle = `rgba(255, 0, 0, ${currentAlpha})`;
-            ctx.fill();
-            ctx.closePath();
+            const screenY = p.y - worldOffsetY;
+            // Only draw if particle is on screen
+            if (screenY > -p.radius && screenY < canvas.height + p.radius) {
+              ctx.beginPath();
+              const currentRadius = p.originalRadius * (p.life / p.maxLife);
+              const currentAlpha = 0.7 * (p.life / p.maxLife);
+              ctx.arc(p.x, screenY, Math.max(0, currentRadius), 0, Math.PI * 2);
+              const rgb = hexToRgb(p.color);
+              if (rgb)
+                ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha})`;
+              else ctx.fillStyle = `rgba(255, 69, 0, ${currentAlpha})`; // Fallback color
+              ctx.fill();
+              ctx.closePath();
+            }
           }
         }
       }
@@ -382,21 +382,375 @@
       function hexToRgb(hex) {
         if (!hex) return null;
         const localHex = hex.startsWith("#") ? hex.slice(1) : hex;
-        if (localHex.length !== 6) return null;
-        const r = parseInt(localHex.substring(0, 2), 16);
-        const g = parseInt(localHex.substring(2, 4), 16);
-        const b = parseInt(localHex.substring(4, 6), 16);
+        if (localHex.length !== 6 && localHex.length !== 3) return null;
+        let r, g, b;
+        if (localHex.length === 3) {
+          r = parseInt(localHex[0] + localHex[0], 16);
+          g = parseInt(localHex[1] + localHex[1], 16);
+          b = parseInt(localHex[2] + localHex[2], 16);
+        } else {
+          r = parseInt(localHex.substring(0, 2), 16);
+          g = parseInt(localHex.substring(2, 4), 16);
+          b = parseInt(localHex.substring(4, 6), 16);
+        }
         if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
         return { r, g, b };
       }
 
+      function drawScore() {
+        score = Math.max(0, Math.floor(-worldOffsetY / 20)); // Score increases as worldOffsetY becomes more negative
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px Arial";
+        ctx.textAlign = "left";
+        ctx.fillText(`Score: ${score}`, 15, 30);
+        ctx.textAlign = "right";
+        ctx.fillText(`High: ${highScore}`, canvas.width - 15, 30);
+      }
+
+      function drawStartScreen() {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "bold 36px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "Infinite Maze Climb",
+          canvas.width / 2,
+          canvas.height / 2 - 60
+        );
+        ctx.font = "20px Arial";
+        ctx.fillText(
+          "Reach for the sky!",
+          canvas.width / 2,
+          canvas.height / 2 - 20
+        );
+        ctx.font = "16px Arial";
+        ctx.fillText(
+          "Tap or Press Space/Enter to Start",
+          canvas.width / 2,
+          canvas.height / 2 + 30
+        );
+      }
+
+      function drawGameOverScreen() {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "bold 36px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Game Over!", canvas.width / 2, canvas.height / 2 - 60);
+        ctx.font = "24px Arial";
+        ctx.fillText(
+          `Your Score: ${score}`,
+          canvas.width / 2,
+          canvas.height / 2 - 20
+        );
+        if (
+          score > highScore &&
+          score === parseInt(localStorage.getItem("infiniteMazeHighScore"))
+        ) {
+          // Check if it's a new high score that was just saved
+          ctx.font = "bold 20px Arial";
+          ctx.fillStyle = "#FFD700"; // Gold for new high score
+          ctx.fillText(
+            "New High Score!",
+            canvas.width / 2,
+            canvas.height / 2 + 15
+          );
+        }
+        ctx.fillStyle = "white";
+        ctx.font = "16px Arial";
+        ctx.fillText(
+          "Tap or Press Space/Enter to Retry",
+          canvas.width / 2,
+          canvas.height / 2 + 60
+        );
+      }
+
+      // --- GAME LOGIC & UPDATES ---
+      function initializeMaze() {
+        platforms = [];
+        // Create initial starting platform
+        const startPlatformY = canvas.height - 80; // World Y for the top of the first platform
+        const startPlatformWidth = canvas.width * 0.6;
+        const startPlatform = {
+          x: canvas.width / 2 - startPlatformWidth / 2,
+          y: startPlatformY,
+          width: startPlatformWidth,
+          height: PLATFORM_HEIGHT * 2, // Make start platform thicker
+          color: "#4CAF50", // Greenish
+        };
+        platforms.push(startPlatform);
+
+        ball.x = canvas.width / 2;
+        ball.y = startPlatform.y - ball.radius - 1; // Place ball on the platform
+        ball.vx = 0;
+        ball.vy = 0;
+
+        // Set camera so the starting platform is near the bottom of the screen
+        worldOffsetY = startPlatform.y - (canvas.height - 80);
+
+        generatedUntilY = startPlatform.y; // Top Y of the highest platform
+        lastPlatformDetails = {
+          x: startPlatform.x,
+          y: startPlatform.y,
+          width: startPlatform.width,
+        };
+
+        ensurePlatformsGenerated(); // Generate some initial platforms above the start
+      }
+
+      function ensurePlatformsGenerated() {
+        // Generate new platforms if the top of the screen (worldOffsetY) is close to the highest generated platform
+        const generationLookahead = canvas.height * 1.5; // Generate 1.5 screens "above" current view top
+
+        while (generatedUntilY > worldOffsetY - generationLookahead) {
+          let prev = lastPlatformDetails;
+
+          let newY =
+            prev.y -
+            (MIN_VERTICAL_GAP +
+              Math.random() * (MAX_VERTICAL_GAP - MIN_VERTICAL_GAP));
+          let newWidth =
+            PLATFORM_MIN_WIDTH +
+            Math.random() * (PLATFORM_MAX_WIDTH - PLATFORM_MIN_WIDTH);
+
+          // Horizontal placement: ensure it's potentially reachable
+          // Max horizontal distance ball can travel during a jump of MAX_VERTICAL_GAP
+          let timeToPeak = ball.jumpForce / gravity; // Time to reach peak of jump
+          let maxHorizontalReach = ball.maxSpeedX * timeToPeak * 1.5; // Factor in some movement during jump
+          // If wall jumping, reach can be further
+          if (ball.wallJumpForceX > ball.maxSpeedX) {
+            let wallJumpTimeToPeak = ball.wallJumpForceY / gravity;
+            maxHorizontalReach = Math.max(
+              maxHorizontalReach,
+              ball.wallJumpForceX * wallJumpTimeToPeak * 1.2
+            );
+          }
+
+          // Attempt to place new platform relative to the previous one's edges
+          let minX = prev.x + prev.width - newWidth - maxHorizontalReach; // Furthest left it can be from right edge of prev
+          let maxX = prev.x + maxHorizontalReach; // Furthest right it can be from left edge of prev
+
+          let newX = Math.random() * (maxX - minX) + minX;
+
+          // Clamp to screen bounds
+          newX = Math.max(
+            ball.radius,
+            Math.min(canvas.width - newWidth - ball.radius, newX)
+          );
+
+          const newPlatform = {
+            x: newX,
+            y: newY,
+            width: newWidth,
+            height: PLATFORM_HEIGHT,
+            color: `hsl(${(200 + Math.abs(newY) / 15) % 360}, 60%, 55%)`, // Color changes with height
+          };
+          platforms.push(newPlatform);
+          generatedUntilY = newPlatform.y;
+          lastPlatformDetails = newPlatform;
+        }
+
+        // Prune old platforms far below the screen
+        const pruneThreshold =
+          worldOffsetY + canvas.height + canvas.height * 0.5; // 0.5 screen below bottom edge
+        platforms = platforms.filter(
+          (p) =>
+            p.y + p.height > worldOffsetY - canvas.height * 0.5 &&
+            p.y < pruneThreshold
+        );
+      }
+
+      function updateBall() {
+        if (keys.left) ball.vx -= ball.moveSpeed;
+        if (keys.right) ball.vx += ball.moveSpeed;
+
+        ball.vx *= ball.onGround ? groundFriction : friction; // Apply friction
+        ball.vx = Math.max(-ball.maxSpeedX, Math.min(ball.maxSpeedX, ball.vx));
+
+        ball.vy += gravity;
+
+        // Reset collision states for this frame
+        ball.onGround = false;
+        ball.isTouchingWall = false;
+        // ball.wallDirection is reset when wall contact is made or lost
+
+        let proposedX = ball.x + ball.vx;
+        let proposedY = ball.y + ball.vy;
+
+        // --- Platform Collisions ---
+        for (const platform of platforms) {
+          const platformScreenY = platform.y - worldOffsetY;
+          if (
+            platformScreenY > canvas.height + PLATFORM_HEIGHT ||
+            platformScreenY < -PLATFORM_HEIGHT * 2
+          ) {
+            // Quick check to skip platforms far off-screen vertically
+            // continue; // This optimization might be premature, ensurePlatformsGenerated prunes well
+          }
+
+          // Horizontal collision (sides of platforms)
+          // Check if ball is vertically aligned with the platform for a side collision
+          if (
+            proposedY + ball.radius > platform.y &&
+            proposedY - ball.radius < platform.y + platform.height
+          ) {
+            // Collision with left side of platform (ball moving right)
+            if (
+              ball.x + ball.radius <= platform.x &&
+              proposedX + ball.radius >= platform.x
+            ) {
+              proposedX = platform.x - ball.radius;
+              ball.vx = 0;
+              ball.isTouchingWall = true;
+              ball.wallDirection = 1; // Wall is to the right of ball
+            }
+            // Collision with right side of platform (ball moving left)
+            else if (
+              ball.x - ball.radius >= platform.x + platform.width &&
+              proposedX - ball.radius <= platform.x + platform.width
+            ) {
+              proposedX = platform.x + platform.width + ball.radius;
+              ball.vx = 0;
+              ball.isTouchingWall = true;
+              ball.wallDirection = -1; // Wall is to the left of ball
+            }
+          }
+
+          // Vertical collision (landing on top or hitting bottom of platform)
+          // Check if ball is horizontally aligned with the platform
+          if (
+            proposedX + ball.radius > platform.x &&
+            proposedX - ball.radius < platform.x + platform.width
+          ) {
+            // Landing on top of platform
+            if (
+              ball.y + ball.radius <= platform.y &&
+              proposedY + ball.radius >= platform.y &&
+              ball.vy >= 0
+            ) {
+              proposedY = platform.y - ball.radius;
+              ball.vy = 0;
+              ball.onGround = true;
+            }
+            // Hitting bottom of platform (bonking head)
+            else if (
+              ball.y - ball.radius >= platform.y + platform.height &&
+              proposedY - ball.radius <= platform.y + platform.height &&
+              ball.vy < 0
+            ) {
+              proposedY = platform.y + platform.height + ball.radius;
+              ball.vy *= -0.2; // Small bounce off bottom
+            }
+          }
+        }
+
+        // --- Canvas Wall Collisions (sides of screen) ---
+        if (proposedX - ball.radius < 0) {
+          proposedX = ball.radius;
+          ball.vx = 0;
+          ball.isTouchingWall = true;
+          ball.wallDirection = -1; // Screen wall is to the left
+        } else if (proposedX + ball.radius > canvas.width) {
+          proposedX = canvas.width - ball.radius;
+          ball.vx = 0;
+          ball.isTouchingWall = true;
+          ball.wallDirection = 1; // Screen wall is to the right
+        }
+
+        ball.x = proposedX;
+        ball.y = proposedY;
+
+        // Jump logic
+        if (keyUpJustPressed) {
+          if (ball.onGround) {
+            ball.vy = -ball.jumpForce;
+            ball.onGround = false; // Instantly not on ground after jump
+          } else if (ball.isTouchingWall) {
+            // Removed !ball.onGround as it's implied if not onGround
+            ball.vy = -ball.wallJumpForceY;
+            ball.vx = -ball.wallDirection * ball.wallJumpForceX; // wallDirection: -1 (left wall), 1 (right wall)
+            ball.isTouchingWall = false; // Instantly not touching wall after jump
+          }
+        }
+        keyUpJustPressed = false;
+
+        // Wall sliding
+        if (ball.isTouchingWall && !ball.onGround && ball.vy > 0) {
+          ball.vy = Math.min(ball.vy, ball.wallSlideSpeed);
+        }
+
+        // Game Over condition: Fell off the bottom of the screen
+        if (ball.y - worldOffsetY > canvas.height + ball.radius * 3) {
+          if (currentGameState === GAME_STATE.PLAYING) {
+            currentGameState = GAME_STATE.GAME_OVER;
+            if (score > highScore) {
+              highScore = score;
+              localStorage.setItem(
+                "infiniteMazeHighScore",
+                highScore.toString()
+              );
+            }
+          }
+        }
+      }
+
+      function updateCamera() {
+        // Target Y for camera to keep ball around 65% from top of screen
+        const targetWorldOffsetY = ball.y - canvas.height * 0.65;
+
+        // Smoothly move camera or directly set it
+        // worldOffsetY += (targetWorldOffsetY - worldOffsetY) * 0.1; // Smooth
+
+        // Camera only moves "up" (worldOffsetY decreases) or stays, it doesn't follow ball down
+        if (targetWorldOffsetY < worldOffsetY) {
+          worldOffsetY = targetWorldOffsetY;
+        }
+      }
+
+      function resetGame() {
+        keys.left = false;
+        keys.right = false;
+        keys.up = false;
+        keyUpJustPressed = false;
+        activeTouchId = null;
+        tailParticles = [];
+        score = 0;
+
+        initializeMaze(); // This sets up ball, platforms, worldOffsetY, etc.
+
+        currentGameState = GAME_STATE.PLAYING;
+      }
+
+      // --- MAIN GAME LOOP ---
       function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        updateBall();
-        manageTail();
-        drawBall();
+
+        if (currentGameState === GAME_STATE.START_SCREEN) {
+          drawStartScreen();
+        } else if (currentGameState === GAME_STATE.PLAYING) {
+          updateBall();
+          updateCamera(); // Update camera based on ball's new world position
+          ensurePlatformsGenerated(); // Generate/prune platforms based on new camera position
+
+          manageTail(); // Handles tail particles (drawing uses worldOffsetY)
+          drawPlatforms();
+          drawBall(); // Draws ball relative to worldOffsetY
+          drawScore();
+        } else if (currentGameState === GAME_STATE.GAME_OVER) {
+          // Can still draw the game state under the game over screen for context
+          drawPlatforms();
+          manageTail();
+          drawBall();
+          drawScore(); // Show final score
+          drawGameOverScreen();
+        }
         requestAnimationFrame(gameLoop);
       }
+
+      // Initialize and start
+      // initializeMaze(); // Called by resetGame or first interaction
       gameLoop();
     </script>
   </body>
