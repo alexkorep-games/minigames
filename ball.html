@@ -501,65 +501,138 @@
       }
 
       function ensurePlatformsGenerated() {
-        // Generate new platforms if the top of the screen (worldOffsetY) is close to the highest generated platform
-        const generationLookahead = canvas.height * 1.5; // Generate 1.5 screens "above" current view top
+        const generationLookahead = canvas.height * 1.5;
+        const generationTargetY = worldOffsetY - generationLookahead; // We want to generate platforms UP TO this Y value
 
-        while (generatedUntilY > worldOffsetY - generationLookahead) {
+        // console.log(`Ensure: generatedUntilY=${generatedUntilY.toFixed(0)}, worldOffsetY=${worldOffsetY.toFixed(0)}, targetY=${generationTargetY.toFixed(0)}`);
+
+        while (generatedUntilY > generationTargetY) {
+          // Keep generating if highest platform is still "below" our target
           let prev = lastPlatformDetails;
 
           let newY =
             prev.y -
             (MIN_VERTICAL_GAP +
               Math.random() * (MAX_VERTICAL_GAP - MIN_VERTICAL_GAP));
+
+          // --- Platform X and Width Generation ---
           let newWidth =
             PLATFORM_MIN_WIDTH +
             Math.random() * (PLATFORM_MAX_WIDTH - PLATFORM_MIN_WIDTH);
+          let newX;
 
-          // Horizontal placement: ensure it's potentially reachable
-          // Max horizontal distance ball can travel during a jump of MAX_VERTICAL_GAP
-          let timeToPeak = ball.jumpForce / gravity; // Time to reach peak of jump
-          let maxHorizontalReach = ball.maxSpeedX * timeToPeak * 1.5; // Factor in some movement during jump
-          // If wall jumping, reach can be further
-          if (ball.wallJumpForceX > ball.maxSpeedX) {
-            let wallJumpTimeToPeak = ball.wallJumpForceY / gravity;
-            maxHorizontalReach = Math.max(
-              maxHorizontalReach,
-              ball.wallJumpForceX * wallJumpTimeToPeak * 1.2
+          const platformTypeRoll = Math.random();
+          const prevPlatform = lastPlatformDetails;
+
+          if (platformTypeRoll < 0.15 && prevPlatform.x > 0) {
+            // 1. Left wall, if prev wasn't also left wall
+            newX = 0;
+            if (Math.random() < 0.25) {
+              // 25% chance for wall platforms to be wider
+              newWidth = Math.min(
+                PLATFORM_MAX_WIDTH * 1.5,
+                canvas.width * (0.3 + Math.random() * 0.4)
+              );
+            }
+          } else if (
+            platformTypeRoll < 0.3 &&
+            prevPlatform.x + prevPlatform.width < canvas.width
+          ) {
+            // 2. Right wall, if prev wasn't also right wall
+            if (Math.random() < 0.25) {
+              newWidth = Math.min(
+                PLATFORM_MAX_WIDTH * 1.5,
+                canvas.width * (0.3 + Math.random() * 0.4)
+              );
+            }
+            newWidth = Math.min(newWidth, canvas.width);
+            newX = canvas.width - newWidth;
+          } else {
+            // 4. Floating platform
+            // Ensure floating platform can have space from walls
+            let minFloatingWidth = PLATFORM_MIN_WIDTH;
+            let maxFloatingWidth = canvas.width - 2 * (ball.radius + 5); // ball radius + 5px margin on each side
+            newWidth = Math.max(
+              minFloatingWidth,
+              Math.min(newWidth, maxFloatingWidth)
             );
+
+            let timeToPeak = ball.jumpForce / gravity;
+            let horizontalReach = ball.maxSpeedX * timeToPeak * 1.7;
+            if (ball.wallJumpForceX > ball.maxSpeedX) {
+              let wallJumpTimeToPeak = ball.wallJumpForceY / gravity;
+              horizontalReach = Math.max(
+                horizontalReach,
+                ball.wallJumpForceX * wallJumpTimeToPeak * 1.4
+              );
+            }
+
+            let prevPlatformCenterX = prevPlatform.x + prevPlatform.width / 2;
+            let idealNewPlatformCenterXMin =
+              prevPlatformCenterX - horizontalReach;
+            let idealNewPlatformCenterXMax =
+              prevPlatformCenterX + horizontalReach;
+
+            let idealXMin = idealNewPlatformCenterXMin - newWidth / 2;
+            let idealXMax = idealNewPlatformCenterXMax - newWidth / 2;
+
+            let possibleXMin = ball.radius + 5;
+            let possibleXMax = canvas.width - newWidth - ball.radius - 5;
+
+            let finalXMin = Math.max(idealXMin, possibleXMin);
+            let finalXMax = Math.min(idealXMax, possibleXMax);
+
+            if (finalXMin >= finalXMax) {
+              if (possibleXMax < possibleXMin) {
+                // Not enough space on canvas for this width + margins
+                // Fallback: make it a wall-hugger or significantly shrink
+                if (Math.random() < 0.5) {
+                  newX = 0;
+                } else {
+                  newX = canvas.width - newWidth;
+                }
+              } else {
+                newX =
+                  possibleXMin + Math.random() * (possibleXMax - possibleXMin);
+              }
+            } else {
+              newX = finalXMin + Math.random() * (finalXMax - finalXMin);
+            }
           }
 
-          // Attempt to place new platform relative to the previous one's edges
-          let minX = prev.x + prev.width - newWidth - maxHorizontalReach; // Furthest left it can be from right edge of prev
-          let maxX = prev.x + maxHorizontalReach; // Furthest right it can be from left edge of prev
-
-          let newX = Math.random() * (maxX - minX) + minX;
-
-          // Clamp to screen bounds
-          newX = Math.max(
-            ball.radius,
-            Math.min(canvas.width - newWidth - ball.radius, newX)
+          // Final safety clamps for width and X
+          newWidth = Math.max(
+            PLATFORM_MIN_WIDTH / 2,
+            Math.min(newWidth, canvas.width)
           );
+          if (newX + newWidth > canvas.width) {
+            newX = canvas.width - newWidth;
+          }
+          newX = Math.max(0, newX);
 
           const newPlatform = {
             x: newX,
             y: newY,
             width: newWidth,
             height: PLATFORM_HEIGHT,
-            color: `hsl(${(200 + Math.abs(newY) / 15) % 360}, 60%, 55%)`, // Color changes with height
+            color: `hsl(${
+              (200 + Math.abs(Math.floor(newY / 20))) % 360
+            }, 60%, 55%)`,
           };
           platforms.push(newPlatform);
-          generatedUntilY = newPlatform.y;
+          generatedUntilY = newPlatform.y; // This is the Y of the top surface of the new highest platform
           lastPlatformDetails = newPlatform;
+          // console.log(`Generated platform at Y=${newPlatform.y.toFixed(0)}, X=${newX.toFixed(0)}, W=${newWidth.toFixed(0)}. New generatedUntilY=${generatedUntilY.toFixed(0)}`);
         }
 
-        // Prune old platforms far below the screen
-        const pruneThreshold =
-          worldOffsetY + canvas.height + canvas.height * 0.5; // 0.5 screen below bottom edge
-        platforms = platforms.filter(
-          (p) =>
-            p.y + p.height > worldOffsetY - canvas.height * 0.5 &&
-            p.y < pruneThreshold
-        );
+        // Pruning old platforms:
+        // Keep platforms whose top edge (p.y) is "higher" (smaller Y value) than a line
+        // well below the current screen view.
+        const pruneBufferScreens = 1.5; // How many screen heights below the viewport bottom to keep platforms
+        const pruneLineWorldY =
+          worldOffsetY + canvas.height + canvas.height * pruneBufferScreens;
+        platforms = platforms.filter((p) => p.y < pruneLineWorldY);
+        // console.log(`Pruned. Platforms remaining: ${platforms.length}. PruneLineY: ${pruneLineWorldY.toFixed(0)}`);
       }
 
       function updateBall() {
