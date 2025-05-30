@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dino Clicker Expedition</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            background-color: #e0e0e0;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #gameArea {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+        }
+        #statsBar {
+            margin-bottom: 10px;
+            font-size: clamp(1.1em, 4.5vw, 1.4em);
+            text-align: center;
+            color: #222;
+            width: 100%;
+            padding: 5px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #statsBar span { font-weight: bold; }
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: #f7f7f7;
+            max-width: 100%;
+            height: auto;
+            display: block;
+            position: relative; /* For power-up text overlay */
+        }
+        #powerUpInfo {
+            position: absolute;
+            top: 35px; /* Adjust as needed */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.1em;
+            color: #ff8c00; /* Orange for Fossil Rush */
+            font-weight: bold;
+            text-shadow: 1px 1px 1px #000;
+            pointer-events: none; /* So it doesn't interfere with canvas clicks */
+            z-index: 10;
+        }
+        #controlsInfo {
+            margin-top: 10px;
+            font-size: clamp(0.8em, 3.5vw, 1em);
+            color: #555;
+            text-align: center;
+        }
+        #workshop {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border: 2px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        #workshop h2 { margin-top: 0; color: #333; }
+        #workshop h3 { color: #444; margin-bottom: 5px; }
+        .upgrade-item {
+            background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 5px;
+            padding: 10px; margin-bottom: 10px; width: 95%; box-sizing: border-box;
+        }
+        .upgrade-item p { margin: 5px 0; font-size: 0.9em; }
+        .upgrade-item button {
+            background-color: #5cb85c; color: white; border: none; padding: 8px 12px;
+            text-align: center; text-decoration: none; display: inline-block;
+            font-size: 0.9em; border-radius: 4px; cursor: pointer; transition: background-color 0.2s;
+        }
+        .upgrade-item button:hover:not(:disabled) { background-color: #4cae4c; }
+        .upgrade-item button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #startExpeditionButton {
+            background-color: #007bff; color: white; padding: 12px 20px; font-size: 1.1em;
+            border: none; border-radius: 5px; cursor: pointer; margin-top: 15px; transition: background-color 0.2s;
+        }
+        #startExpeditionButton:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div id="gameArea">
+        <div id="statsBar">
+            Fossils: <span id="totalFossilsDisplay">0</span> | Last Run: <span id="runFossilsDisplay">0</span> | High Score: <span id="highScoreDisplay">0</span>
+        </div>
+        <div style="position: relative;"> <!-- Wrapper for canvas and powerUpInfo -->
+            <canvas id="gameCanvas"></canvas>
+            <div id="powerUpInfo"></div> <!-- For displaying active power-up text -->
+        </div>
+        <div id="controlsInfo">Tap, SPACE, or ↑ to Jump</div>
+    </div>
+
+    <div id="workshop">
+        <h2>Workshop</h2>
+        <p>Current Fossils: <strong id="workshopFossilsDisplay">0</strong></p>
+        <div id="upgradesList"></div>
+        <button id="startExpeditionButton">Start New Expedition</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const totalFossilsDisplay = document.getElementById('totalFossilsDisplay');
+        const runFossilsDisplay = document.getElementById('runFossilsDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        const workshopEl = document.getElementById('workshop');
+        const workshopFossilsDisplay = document.getElementById('workshopFossilsDisplay');
+        const upgradesListEl = document.getElementById('upgradesList');
+        const startExpeditionButton = document.getElementById('startExpeditionButton');
+        const controlsInfoEl = document.getElementById('controlsInfo');
+        const powerUpInfoEl = document.getElementById('powerUpInfo');
+
+        // --- Game Constants ---
+        const CANVAS_WIDTH = 600;
+        const CANVAS_HEIGHT = 200;
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        const GROUND_Y = CANVAS_HEIGHT - 30;
+        const DINO_WIDTH = 20;
+        const DINO_HEIGHT = 40;
+        const DINO_COLOR = '#666';
+
+        const OBSTACLE_MIN_WIDTH = 15;
+        const OBSTACLE_MAX_WIDTH = 30;
+        const OBSTACLE_MIN_HEIGHT = 20;
+        const OBSTACLE_MAX_HEIGHT = 50;
+        const OBSTACLE_COLOR = '#555';
+        const OBSTACLE_SPAWN_INTERVAL_MIN = 70;
+        const OBSTACLE_SPAWN_INTERVAL_MAX = 140;
+        const GRAVITY = 0.8;
+
+        // --- Power-Up Base Constants ---
+        const POWERUP_SPAWN_CHANCE = 0.1; 
+        const GOLDEN_FOSSIL_PICKUP_COLOR = '#FFD700'; 
+        const FOSSIL_RUSH_PICKUP_COLOR = '#DA70D6'; 
+        
+        const BASE_GOLDEN_FOSSIL_BONUS = 10;
+        const GOLDEN_FOSSIL_BONUS_INCREMENT_PER_LEVEL = 5;
+
+        const BASE_FOSSIL_RUSH_MULTIPLIER = 2;
+        const FOSSIL_RUSH_MULTIPLIER_INCREMENT_PER_LEVEL = 0.5;
+
+        const BASE_FOSSIL_RUSH_DURATION_FRAMES = 300; // 5 seconds at 60FPS
+        const FOSSIL_RUSH_DURATION_INCREMENT_PER_LEVEL_FRAMES = 60; // 1 second per level
+
+        const ITEM_TYPES = {
+            OBSTACLE: 'obstacle',
+            GOLDEN_FOSSIL: 'golden_fossil',
+            FOSSIL_RUSH_PICKUP: 'fossil_rush_pickup'
+        };
+
+        // --- Base Game Values ---
+        const BASE_JUMP_STRENGTH = -15; 
+        const JUMP_STRENGTH_INCREMENT_PER_LEVEL = 0.5;
+
+        const INITIAL_GAME_SPEED = 5; 
+        const GAME_SPEED_INCREMENT = 0.001; 
+
+        const BASE_PALEO_BOT_RATE = 0.1; 
+        const BASE_PALEO_BOT_EFFICIENCY_MULTIPLIER = 0.15;
+
+        // --- Game State Variables ---
+        let dino;
+        let items = []; 
+        let runFossils = 0;
+        let totalFossils = 0;
+        let highScore = 0;
+        let gameSpeed; 
+        let actualJumpStrength; 
+        
+        // Actual Power-up values (modified by upgrades)
+        let actualGoldenFossilBonus;
+        let actualFossilRushMultiplier;
+        let actualFossilRushDurationFrames;
+        
+        let gameOver;
+        let frameCount = 0;
+        let nextItemSpawnFrame;
+        let animationFrameId;
+        
+        let paleoBotIntervalId;
+        let paleoBotFractionalFossils = 0; 
+
+        let isFossilRushActive = false;
+        let fossilRushTimer = 0;
+
+        // --- Upgrades Data Structure ---
+        let upgrades = {
+            enhancedJump: { 
+                name: 'Enhanced Jump', 
+                description: level => `Jump strength: ${(-actualJumpStrength).toFixed(1)}. Jump higher.`, 
+                level: 0, maxLevel: 10, 
+                cost: level => Math.floor(20 * Math.pow(1.7, level)), 
+                apply: () => { 
+                    actualJumpStrength = BASE_JUMP_STRENGTH + (upgrades.enhancedJump.level * JUMP_STRENGTH_INCREMENT_PER_LEVEL); 
+                }
+            },
+            fossilExpertise: {
+                name: 'Fossil Expertise',
+                description: level => `Gain +${level} bonus Fossils per jumped obstacle. (Total: ${1 + level})`,
+                level: 0, maxLevel: 5,
+                cost: level => Math.floor(50 * Math.pow(2.0, level)),
+                apply: () => { /* Value read directly */ }
+            },
+            enrichedGeodes: {
+                name: 'Enriched Geodes',
+                description: level => `Golden Fossils grant +${actualGoldenFossilBonus} Fossils.`,
+                level: 0, maxLevel: 10,
+                cost: level => Math.floor(40 * Math.pow(1.8, level)),
+                apply: () => {
+                    actualGoldenFossilBonus = BASE_GOLDEN_FOSSIL_BONUS + (upgrades.enrichedGeodes.level * GOLDEN_FOSSIL_BONUS_INCREMENT_PER_LEVEL);
+                }
+            },
+            rushIntensity: {
+                name: 'Rush Intensity',
+                description: level => `Fossil Rush multiplier: x${actualFossilRushMultiplier.toFixed(1)}.`,
+                level: 0, maxLevel: 6, // Max multiplier of 2 + 6*0.5 = 5x
+                cost: level => Math.floor(70 * Math.pow(2.1, level)),
+                apply: () => {
+                    actualFossilRushMultiplier = BASE_FOSSIL_RUSH_MULTIPLIER + (upgrades.rushIntensity.level * FOSSIL_RUSH_MULTIPLIER_INCREMENT_PER_LEVEL);
+                }
+            },
+            extendedRush: {
+                name: 'Extended Rush',
+                description: level => `Fossil Rush duration: ${(actualFossilRushDurationFrames / 60).toFixed(1)} seconds.`,
+                level: 0, maxLevel: 5, // Max duration 5s + 5*1s = 10s
+                cost: level => Math.floor(60 * Math.pow(1.9, level)),
+                apply: () => {
+                    actualFossilRushDurationFrames = BASE_FOSSIL_RUSH_DURATION_FRAMES + (upgrades.extendedRush.level * FOSSIL_RUSH_DURATION_INCREMENT_PER_LEVEL_FRAMES);
+                }
+            },
+            paleoBot: { 
+                name: 'Paleo-Bot Mk I', 
+                description: level => `Generates ${getPaleoBotRate().toFixed(1)} Fossils/sec in Workshop.`, 
+                level: 0, maxLevel: 20, 
+                cost: level => Math.floor(15 * Math.pow(1.6, level)), 
+                apply: () => { /* Effect managed by getPaleoBotRate */ }
+            },
+            botEfficiency: { 
+                name: 'Bot Efficiency Chips', 
+                description: level => `Multiplies Paleo-Bot generation by x${(1 + upgrades.botEfficiency.level * BASE_PALEO_BOT_EFFICIENCY_MULTIPLIER).toFixed(2)}.`, 
+                level: 0, maxLevel: 10, 
+                cost: level => Math.floor(100 * Math.pow(1.9, level)), 
+                apply: () => { /* Effect managed by getPaleoBotRate */ }
+            }
+        };
+        
+        function getPaleoBotRate() { if (upgrades.paleoBot.level === 0) return 0; const botBase = upgrades.paleoBot.level * BASE_PALEO_BOT_RATE; const efficiencyMultiplier = 1 + (upgrades.botEfficiency.level * BASE_PALEO_BOT_EFFICIENCY_MULTIPLIER); return botBase * efficiencyMultiplier; }
+        
+        function saveData() { localStorage.setItem('dinoClicker_totalFossils', Math.floor(totalFossils).toString()); localStorage.setItem('dinoClicker_highScore', highScore.toString()); const upgradeLevels = {}; for (const key in upgrades) { upgradeLevels[key] = upgrades[key].level; } localStorage.setItem('dinoClicker_upgrades', JSON.stringify(upgradeLevels));}
+
+        function loadData() { 
+            totalFossils = parseInt(localStorage.getItem('dinoClicker_totalFossils')) || 0; 
+            paleoBotFractionalFossils = 0; 
+            highScore = parseInt(localStorage.getItem('dinoClicker_highScore')) || 0; 
+            const savedUpgradeLevels = JSON.parse(localStorage.getItem('dinoClicker_upgrades')); 
+            if (savedUpgradeLevels) { 
+                for (const key in upgrades) { 
+                    if (upgrades[key] && savedUpgradeLevels[key] !== undefined) { 
+                        upgrades[key].level = savedUpgradeLevels[key]; 
+                    }
+                }
+            } 
+            applyAllUpgrades(); 
+            updateUIDisplays(); 
+        }
+        
+        function applyAllUpgrades() { 
+            // Initialize/Apply all upgrades to set their respective 'actual' values
+            actualJumpStrength = BASE_JUMP_STRENGTH + (upgrades.enhancedJump.level * JUMP_STRENGTH_INCREMENT_PER_LEVEL);
+            actualGoldenFossilBonus = BASE_GOLDEN_FOSSIL_BONUS + (upgrades.enrichedGeodes.level * GOLDEN_FOSSIL_BONUS_INCREMENT_PER_LEVEL);
+            actualFossilRushMultiplier = BASE_FOSSIL_RUSH_MULTIPLIER + (upgrades.rushIntensity.level * FOSSIL_RUSH_MULTIPLIER_INCREMENT_PER_LEVEL);
+            actualFossilRushDurationFrames = BASE_FOSSIL_RUSH_DURATION_FRAMES + (upgrades.extendedRush.level * FOSSIL_RUSH_DURATION_INCREMENT_PER_LEVEL_FRAMES);
+            
+            // Call apply for any other upgrades that might need it (though current ones are mostly direct value setting)
+            for (const key in upgrades) { 
+                if (upgrades[key] && typeof upgrades[key].apply === 'function') {
+                    // Some apply functions like enhancedJump are re-setting values already set above.
+                    // This is okay, but for clarity, the individual value settings above are more explicit.
+                    // The .apply() calls here are more for future-proofing if an upgrade has complex logic.
+                    upgrades[key].apply(); 
+                }
+            }
+        }
+        
+        // --- Dino & Item Logic ---
+        function initDino() { return { x: 50, y: GROUND_Y - DINO_HEIGHT, width: DINO_WIDTH, height: DINO_HEIGHT, dy: 0, isJumping: false, groundY: GROUND_Y - DINO_HEIGHT }; }
+
+        function createItem() {
+            const width = Math.random() * (OBSTACLE_MAX_WIDTH - OBSTACLE_MIN_WIDTH) + OBSTACLE_MIN_WIDTH;
+            const height = Math.random() * (OBSTACLE_MAX_HEIGHT - OBSTACLE_MIN_HEIGHT) + OBSTACLE_MIN_HEIGHT;
+            let itemType = ITEM_TYPES.OBSTACLE;
+            let color = OBSTACLE_COLOR;
+            let powerUpHeight = DINO_HEIGHT * 0.75; 
+            let powerUpWidth = DINO_WIDTH * 0.75;
+
+            if (Math.random() < POWERUP_SPAWN_CHANCE) {
+                if (Math.random() < 0.5) { 
+                    itemType = ITEM_TYPES.GOLDEN_FOSSIL;
+                    color = GOLDEN_FOSSIL_PICKUP_COLOR;
+                    return { x: CANVAS_WIDTH, y: GROUND_Y - powerUpHeight - Math.random() * 10, width: powerUpWidth, height: powerUpHeight, passed: false, itemType: itemType, color: color };
+                } else {
+                    itemType = ITEM_TYPES.FOSSIL_RUSH_PICKUP;
+                    color = FOSSIL_RUSH_PICKUP_COLOR;
+                     return { x: CANVAS_WIDTH, y: GROUND_Y - powerUpHeight - Math.random() * 10, width: powerUpWidth, height: powerUpHeight, passed: false, itemType: itemType, color: color };
+                }
+            }
+            return { x: CANVAS_WIDTH, y: GROUND_Y - height, width: width, height: height, passed: false, itemType: itemType, color: color };
+        }
+
+        // --- Game Flow ---
+        function resetGame() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            applyAllUpgrades(); 
+
+            dino = initDino();
+            items = [];
+            runFossils = 0;
+            gameSpeed = INITIAL_GAME_SPEED; 
+            gameOver = false;
+            frameCount = 0;
+            nextItemSpawnFrame = Math.floor(Math.random() * (OBSTACLE_SPAWN_INTERVAL_MAX - OBSTACLE_SPAWN_INTERVAL_MIN)) + OBSTACLE_SPAWN_INTERVAL_MIN;
+            
+            isFossilRushActive = false;
+            fossilRushTimer = 0;
+
+            updateUIDisplays();
+            hideWorkshop();
+            loop();
+        }
+        function endGame() { gameOver = true; totalFossils += runFossils; if (runFossils > highScore) { highScore = runFossils; } isFossilRushActive = false; fossilRushTimer = 0; saveData(); updateUIDisplays(); showWorkshop(); }
+
+        // --- Drawing ---
+        function drawGround() { ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(CANVAS_WIDTH, GROUND_Y); ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.stroke(); }
+        function drawDino() { ctx.fillStyle = DINO_COLOR; ctx.fillRect(dino.x, dino.y, dino.width, dino.height); }
+        function drawItems() { items.forEach(item => { ctx.fillStyle = item.color; ctx.fillRect(item.x, item.y, item.width, item.height);});}
+        function drawRunFossils() { ctx.font = '16px "Courier New", Courier, monospace'; ctx.fillStyle = '#333'; ctx.textAlign = 'left'; ctx.fillText(`Fossils: ${runFossils}`, 10, 20); }
+        function drawActivePowerUpStatus() {
+            if (isFossilRushActive) {
+                powerUpInfoEl.textContent = `FOSSIL RUSH! x${actualFossilRushMultiplier.toFixed(1)} (${Math.ceil(fossilRushTimer / 60)}s)`;
+            } else {
+                powerUpInfoEl.textContent = '';
+            }
+        }
+        function drawGameOverMessage() { ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); ctx.font = '30px "Courier New", Courier, monospace'; ctx.fillStyle = 'white'; ctx.textAlign = 'center'; ctx.fillText('EXPEDITION FAILED', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 15); ctx.font = '20px "Courier New", Courier, monospace'; ctx.fillText('Entering Workshop...', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 15); }
+
+        // --- Updates ---
+        function updateDino() { if (dino.isJumping) { dino.dy += GRAVITY; dino.y += dino.dy; if (dino.y >= dino.groundY) { dino.y = dino.groundY; dino.dy = 0; dino.isJumping = false; }}}
+        
+        function updateItemsAndFossils() {
+            frameCount++;
+            if (frameCount >= nextItemSpawnFrame) {
+                items.push(createItem());
+                frameCount = 0;
+                const dynamicMaxInterval = Math.max(OBSTACLE_SPAWN_INTERVAL_MIN + 10, OBSTACLE_SPAWN_INTERVAL_MAX - (gameSpeed - INITIAL_GAME_SPEED) * 5);
+                nextItemSpawnFrame = Math.floor(Math.random() * (dynamicMaxInterval - OBSTACLE_SPAWN_INTERVAL_MIN)) + OBSTACLE_SPAWN_INTERVAL_MIN;
+            }
+
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                item.x -= gameSpeed;
+
+                if (item.itemType === ITEM_TYPES.OBSTACLE && !item.passed && item.x + item.width < dino.x) {
+                    let baseFossilsFromJump = 1;
+                    let bonusFromExpertise = upgrades.fossilExpertise.level; 
+                    let fossilsEarned = baseFossilsFromJump + bonusFromExpertise;
+
+                    if (isFossilRushActive) {
+                        fossilsEarned *= actualFossilRushMultiplier;
+                    }
+                    runFossils += Math.floor(fossilsEarned); // Ensure whole fossils from jumps
+                    item.passed = true;
+                    updateUIDisplays();
+                }
+
+                if (item.x + item.width < 0) {
+                    items.splice(i, 1);
+                }
+            }
+        }
+
+        function updatePowerUps() {
+            if (isFossilRushActive) {
+                fossilRushTimer--;
+                if (fossilRushTimer <= 0) {
+                    isFossilRushActive = false;
+                }
+            }
+            drawActivePowerUpStatus(); 
+        }
+
+        function checkCollisions() {
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                if ( dino.x < item.x + item.width && dino.x + dino.width > item.x && dino.y < item.y + item.height && dino.y + dino.height > item.y) {
+                    if (item.itemType === ITEM_TYPES.OBSTACLE) {
+                        endGame();
+                        return; 
+                    } else if (item.itemType === ITEM_TYPES.GOLDEN_FOSSIL) {
+                        runFossils += actualGoldenFossilBonus;
+                        items.splice(i, 1); 
+                        updateUIDisplays();
+                    } else if (item.itemType === ITEM_TYPES.FOSSIL_RUSH_PICKUP) {
+                        isFossilRushActive = true;
+                        fossilRushTimer = actualFossilRushDurationFrames;
+                        items.splice(i, 1); 
+                        updateUIDisplays();
+                    }
+                }
+            }
+        }
+        function updateGameSpeed() { gameSpeed += GAME_SPEED_INCREMENT; }
+
+        // --- Main Game Loop ---
+        function loop() {
+            if (gameOver) { drawGameOverMessage(); return; }
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            updateDino(); updateItemsAndFossils(); updatePowerUps(); updateGameSpeed(); checkCollisions(); 
+            if (!gameOver) { drawGround(); drawDino(); drawItems(); drawRunFossils(); animationFrameId = requestAnimationFrame(loop); }
+        }
+
+        // --- Workshop UI & Logic ---
+        function renderWorkshop() { 
+            upgradesListEl.innerHTML = ''; 
+            applyAllUpgrades(); // CRITICAL: ensure 'actual' values are set before descriptions are made
+            for (const key in upgrades) { 
+                const upgrade = upgrades[key]; 
+                const itemEl = document.createElement('div'); itemEl.classList.add('upgrade-item'); 
+                const nameEl = document.createElement('h3'); nameEl.textContent = `${upgrade.name} (Lvl ${upgrade.level})`; itemEl.appendChild(nameEl); 
+                const descEl = document.createElement('p'); descEl.textContent = upgrade.description(upgrade.level); itemEl.appendChild(descEl); 
+                const cost = upgrade.cost(upgrade.level); 
+                const costEl = document.createElement('p'); costEl.textContent = `Cost: ${upgrade.level >= upgrade.maxLevel ? 'MAXED' : cost + ' Fossils'}`; itemEl.appendChild(costEl); 
+                if (upgrade.level < upgrade.maxLevel) { 
+                    const buyButton = document.createElement('button'); buyButton.textContent = 'Upgrade'; buyButton.disabled = totalFossils < cost; buyButton.onclick = () => buyUpgrade(key); itemEl.appendChild(buyButton); 
+                } 
+                upgradesListEl.appendChild(itemEl); 
+            } 
+            workshopFossilsDisplay.textContent = Math.floor(totalFossils); 
+        }
+        function buyUpgrade(key) { 
+            const upgrade = upgrades[key]; const cost = upgrade.cost(upgrade.level); 
+            if (totalFossils >= cost && upgrade.level < upgrade.maxLevel) { 
+                totalFossils -= cost; upgrade.level++; 
+                // applyAllUpgrades(); // This will be called by renderWorkshop which is called next
+                upgrade.apply(); // Apply specific upgrade immediately to update its 'actual' value
+                saveData(); 
+                renderWorkshop(); // This will re-call applyAllUpgrades to refresh all descriptions
+                updateUIDisplays(); 
+            }
+        }
+        function showWorkshop() { canvas.style.display = 'none'; powerUpInfoEl.style.display = 'none'; controlsInfoEl.style.display = 'none'; workshopEl.style.display = 'flex'; renderWorkshop(); startPaleoBot(); }
+        function hideWorkshop() { workshopEl.style.display = 'none'; canvas.style.display = 'block'; powerUpInfoEl.style.display = 'block'; controlsInfoEl.style.display = 'block'; stopPaleoBot(); }
+        
+        function updateUIDisplays() {
+            totalFossilsDisplay.textContent = Math.floor(totalFossils); 
+            runFossilsDisplay.textContent = runFossils; highScoreDisplay.textContent = highScore;
+            if (workshopEl.style.display === 'flex') { workshopFossilsDisplay.textContent = Math.floor(totalFossils); }
+            drawActivePowerUpStatus(); 
+        }
+
+        function startPaleoBot() {
+            if (paleoBotIntervalId) clearInterval(paleoBotIntervalId);
+            const ratePerSecond = getPaleoBotRate();
+            if (ratePerSecond > 0) {
+                const gainPerTick = ratePerSecond / 10; 
+                paleoBotIntervalId = setInterval(() => {
+                    paleoBotFractionalFossils += gainPerTick;
+                    if (paleoBotFractionalFossils >= 1) {
+                        const wholeFossilsEarned = Math.floor(paleoBotFractionalFossils);
+                        totalFossils += wholeFossilsEarned;
+                        paleoBotFractionalFossils -= wholeFossilsEarned; 
+                    }
+                    workshopFossilsDisplay.textContent = Math.floor(totalFossils);
+                    totalFossilsDisplay.textContent = Math.floor(totalFossils); 
+                }, 100); 
+            }
+        }
+        function stopPaleoBot() { if (paleoBotIntervalId) clearInterval(paleoBotIntervalId); paleoBotIntervalId = null; saveData(); }
+
+        // --- Event Listeners ---
+        function handleInput() { if (!gameOver && !dino.isJumping) { dino.isJumping = true; dino.dy = actualJumpStrength; }}
+        document.addEventListener('keydown', (e) => { if (e.code === 'Space' || e.key === 'ArrowUp') { e.preventDefault(); if (!gameOver) { handleInput(); } }});
+        document.addEventListener('touchstart', (e) => { e.preventDefault(); if (!gameOver) { handleInput(); }});
+        startExpeditionButton.addEventListener('click', resetGame);
+
+        // --- Initial Load ---
+        loadData(); 
+        if (totalFossils > 0 || Object.values(upgrades).some(up => up.level > 0)) { showWorkshop(); } else { resetGame(); }
+    </script>
+</body>
+</html>
