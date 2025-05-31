@@ -172,13 +172,22 @@
 
         // --- Base Game Values ---
         const BASE_JUMP_STRENGTH = -15; 
-        const JUMP_STRENGTH_INCREMENT_PER_LEVEL = 0.5;
+        const JUMP_STRENGTH_INCREMENT_PER_LEVEL = 0.5; // Positive increment, will be subtracted from negative base
 
         const INITIAL_GAME_SPEED = 5; 
         const GAME_SPEED_INCREMENT = 0.001; 
 
         const BASE_PALEO_BOT_RATE = 0.1; 
         const BASE_PALEO_BOT_EFFICIENCY_MULTIPLIER = 0.15;
+
+        // --- Score Animation Constants ---
+        const SCORE_ANIMATION_DURATION = 100; 
+        const SCORE_ANIMATION_SPEED_Y = 1.2;
+        const SCORE_ANIMATION_FONT_SIZE_PX = 20;
+        const SCORE_ANIMATION_FONT = `bold ${SCORE_ANIMATION_FONT_SIZE_PX}px "Courier New", Courier, monospace`;
+        const SCORE_ANIMATION_STROKE_COLOR = '#000000';
+        const SCORE_ANIMATION_STROKE_WIDTH = 2;
+        const NORMAL_FOSSIL_ANIMATION_COLOR = '#2ecc71'; 
 
         // --- Game State Variables ---
         let dino;
@@ -189,7 +198,6 @@
         let gameSpeed; 
         let actualJumpStrength; 
         
-        // Actual Power-up values (modified by upgrades)
         let actualGoldenFossilBonus;
         let actualFossilRushMultiplier;
         let actualFossilRushDurationFrames;
@@ -205,6 +213,8 @@
         let isFossilRushActive = false;
         let fossilRushTimer = 0;
 
+        let scoreAnimations = [];
+
         // --- Upgrades Data Structure ---
         let upgrades = {
             enhancedJump: { 
@@ -213,7 +223,7 @@
                 level: 0, maxLevel: 10, 
                 cost: level => Math.floor(20 * Math.pow(1.7, level)), 
                 apply: () => { 
-                    actualJumpStrength = BASE_JUMP_STRENGTH + (upgrades.enhancedJump.level * JUMP_STRENGTH_INCREMENT_PER_LEVEL); 
+                    actualJumpStrength = BASE_JUMP_STRENGTH - (upgrades.enhancedJump.level * JUMP_STRENGTH_INCREMENT_PER_LEVEL); 
                 }
             },
             fossilExpertise: {
@@ -221,7 +231,7 @@
                 description: level => `Gain +${level} bonus Fossils per jumped obstacle. (Total: ${1 + level})`,
                 level: 0, maxLevel: 5,
                 cost: level => Math.floor(50 * Math.pow(2.0, level)),
-                apply: () => { /* Value read directly */ }
+                apply: () => { /* Value read directly from level */ }
             },
             enrichedGeodes: {
                 name: 'Enriched Geodes',
@@ -235,7 +245,7 @@
             rushIntensity: {
                 name: 'Rush Intensity',
                 description: level => `Fossil Rush multiplier: x${actualFossilRushMultiplier.toFixed(1)}.`,
-                level: 0, maxLevel: 6, // Max multiplier of 2 + 6*0.5 = 5x
+                level: 0, maxLevel: 6, 
                 cost: level => Math.floor(70 * Math.pow(2.1, level)),
                 apply: () => {
                     actualFossilRushMultiplier = BASE_FOSSIL_RUSH_MULTIPLIER + (upgrades.rushIntensity.level * FOSSIL_RUSH_MULTIPLIER_INCREMENT_PER_LEVEL);
@@ -244,7 +254,7 @@
             extendedRush: {
                 name: 'Extended Rush',
                 description: level => `Fossil Rush duration: ${(actualFossilRushDurationFrames / 60).toFixed(1)} seconds.`,
-                level: 0, maxLevel: 5, // Max duration 5s + 5*1s = 10s
+                level: 0, maxLevel: 5, 
                 cost: level => Math.floor(60 * Math.pow(1.9, level)),
                 apply: () => {
                     actualFossilRushDurationFrames = BASE_FOSSIL_RUSH_DURATION_FRAMES + (upgrades.extendedRush.level * FOSSIL_RUSH_DURATION_INCREMENT_PER_LEVEL_FRAMES);
@@ -287,18 +297,8 @@
         }
         
         function applyAllUpgrades() { 
-            // Initialize/Apply all upgrades to set their respective 'actual' values
-            actualJumpStrength = BASE_JUMP_STRENGTH + (upgrades.enhancedJump.level * JUMP_STRENGTH_INCREMENT_PER_LEVEL);
-            actualGoldenFossilBonus = BASE_GOLDEN_FOSSIL_BONUS + (upgrades.enrichedGeodes.level * GOLDEN_FOSSIL_BONUS_INCREMENT_PER_LEVEL);
-            actualFossilRushMultiplier = BASE_FOSSIL_RUSH_MULTIPLIER + (upgrades.rushIntensity.level * FOSSIL_RUSH_MULTIPLIER_INCREMENT_PER_LEVEL);
-            actualFossilRushDurationFrames = BASE_FOSSIL_RUSH_DURATION_FRAMES + (upgrades.extendedRush.level * FOSSIL_RUSH_DURATION_INCREMENT_PER_LEVEL_FRAMES);
-            
-            // Call apply for any other upgrades that might need it (though current ones are mostly direct value setting)
             for (const key in upgrades) { 
                 if (upgrades[key] && typeof upgrades[key].apply === 'function') {
-                    // Some apply functions like enhancedJump are re-setting values already set above.
-                    // This is okay, but for clarity, the individual value settings above are more explicit.
-                    // The .apply() calls here are more for future-proofing if an upgrade has complex logic.
                     upgrades[key].apply(); 
                 }
             }
@@ -329,6 +329,50 @@
             return { x: CANVAS_WIDTH, y: GROUND_Y - height, width: width, height: height, passed: false, itemType: itemType, color: color };
         }
 
+        // --- Score Animation Logic ---
+        function createScoreAnimation(text, x, y, color) {
+            scoreAnimations.push({
+                text: text,
+                x: x,
+                y: y, 
+                life: SCORE_ANIMATION_DURATION,
+                opacity: 1,
+                color: color || NORMAL_FOSSIL_ANIMATION_COLOR 
+            });
+        }
+
+        function updateScoreAnimations() {
+            for (let i = scoreAnimations.length - 1; i >= 0; i--) {
+                const anim = scoreAnimations[i];
+                anim.y -= SCORE_ANIMATION_SPEED_Y;
+                anim.life--;
+                anim.opacity = Math.max(0, anim.life / SCORE_ANIMATION_DURATION); 
+
+                if (anim.life <= 0) {
+                    scoreAnimations.splice(i, 1);
+                }
+            }
+        }
+
+        function drawScoreAnimations() {
+            ctx.font = SCORE_ANIMATION_FONT;
+            ctx.textAlign = 'center'; 
+            ctx.strokeStyle = SCORE_ANIMATION_STROKE_COLOR;
+            ctx.lineWidth = SCORE_ANIMATION_STROKE_WIDTH;
+
+            scoreAnimations.forEach(anim => {
+                ctx.save();
+                ctx.globalAlpha = anim.opacity;
+                
+                ctx.fillStyle = anim.color;
+                ctx.strokeText(anim.text, anim.x, anim.y); 
+                ctx.fillText(anim.text, anim.x, anim.y);   
+                
+                ctx.restore();
+            });
+        }
+
+
         // --- Game Flow ---
         function resetGame() {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -336,6 +380,7 @@
 
             dino = initDino();
             items = [];
+            scoreAnimations = []; 
             runFossils = 0;
             gameSpeed = INITIAL_GAME_SPEED; 
             gameOver = false;
@@ -389,7 +434,16 @@
                     if (isFossilRushActive) {
                         fossilsEarned *= actualFossilRushMultiplier;
                     }
-                    runFossils += Math.floor(fossilsEarned); // Ensure whole fossils from jumps
+                    fossilsEarned = Math.floor(fossilsEarned); 
+
+                    if (fossilsEarned > 0) { 
+                        runFossils += fossilsEarned;
+                        // Animate score from the obstacle's position
+                        createScoreAnimation(`+${fossilsEarned}`, 
+                                             item.x + item.width / 2, // Horizontal center of obstacle
+                                             item.y - (SCORE_ANIMATION_FONT_SIZE_PX / 2), // Slightly above obstacle
+                                             NORMAL_FOSSIL_ANIMATION_COLOR);
+                    }
                     item.passed = true;
                     updateUIDisplays();
                 }
@@ -418,7 +472,13 @@
                         endGame();
                         return; 
                     } else if (item.itemType === ITEM_TYPES.GOLDEN_FOSSIL) {
-                        runFossils += actualGoldenFossilBonus;
+                        const bonusAmount = actualGoldenFossilBonus;
+                        runFossils += bonusAmount;
+                        // Animate score from dino's position for pickups
+                        createScoreAnimation(`+${bonusAmount}`, 
+                                             dino.x + dino.width / 2, 
+                                             dino.y - (SCORE_ANIMATION_FONT_SIZE_PX / 2), 
+                                             GOLDEN_FOSSIL_PICKUP_COLOR);
                         items.splice(i, 1); 
                         updateUIDisplays();
                     } else if (item.itemType === ITEM_TYPES.FOSSIL_RUSH_PICKUP) {
@@ -436,14 +496,29 @@
         function loop() {
             if (gameOver) { drawGameOverMessage(); return; }
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-            updateDino(); updateItemsAndFossils(); updatePowerUps(); updateGameSpeed(); checkCollisions(); 
-            if (!gameOver) { drawGround(); drawDino(); drawItems(); drawRunFossils(); animationFrameId = requestAnimationFrame(loop); }
+            
+            updateDino(); 
+            updateItemsAndFossils(); 
+            updatePowerUps(); 
+            updateGameSpeed(); 
+            updateScoreAnimations(); 
+            
+            checkCollisions(); 
+            
+            if (!gameOver) { 
+                drawGround(); 
+                drawDino(); 
+                drawItems(); 
+                drawRunFossils(); 
+                drawScoreAnimations(); 
+                animationFrameId = requestAnimationFrame(loop); 
+            }
         }
 
         // --- Workshop UI & Logic ---
         function renderWorkshop() { 
             upgradesListEl.innerHTML = ''; 
-            applyAllUpgrades(); // CRITICAL: ensure 'actual' values are set before descriptions are made
+            applyAllUpgrades(); // Ensure all 'actual' values are current for descriptions
             for (const key in upgrades) { 
                 const upgrade = upgrades[key]; 
                 const itemEl = document.createElement('div'); itemEl.classList.add('upgrade-item'); 
@@ -462,10 +537,9 @@
             const upgrade = upgrades[key]; const cost = upgrade.cost(upgrade.level); 
             if (totalFossils >= cost && upgrade.level < upgrade.maxLevel) { 
                 totalFossils -= cost; upgrade.level++; 
-                // applyAllUpgrades(); // This will be called by renderWorkshop which is called next
-                upgrade.apply(); // Apply specific upgrade immediately to update its 'actual' value
+                upgrade.apply(); // Apply the specific upgrade immediately
                 saveData(); 
-                renderWorkshop(); // This will re-call applyAllUpgrades to refresh all descriptions
+                renderWorkshop(); // Re-render to update all descriptions and button states
                 updateUIDisplays(); 
             }
         }
