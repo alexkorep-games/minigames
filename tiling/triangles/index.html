@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Triangle Tiler</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        background-color: #f0f0f0;
+        overflow: hidden; /* Hide scrollbars if canvas is larger than window */
+      }
+      .controls {
+        padding: 10px;
+        background-color: #ddd;
+        border-radius: 5px;
+        margin-bottom: 10px; /* Space between controls and canvas */
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        z-index: 10; /* Ensure controls are above canvas if overlap happens */
+      }
+      .control-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      label {
+        margin-right: 5px;
+      }
+      input[type="range"] {
+        width: 150px;
+      }
+      canvas {
+        border: 1px solid black;
+        background-color: #fff;
+        display: block; /* Removes extra space below canvas */
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <div class="control-group">
+        <label for="sizeSlider">Size:</label>
+        <input type="range" id="sizeSlider" min="10" max="200" value="70" />
+        <span id="sizeValue">70</span>
+      </div>
+      <div class="control-group">
+        <label for="rotationSlider">Rotation:</label>
+        <input type="range" id="rotationSlider" min="0" max="360" value="0" />
+        <span id="rotationValue">0</span>°
+      </div>
+    </div>
+    <canvas id="triangleCanvas"></canvas>
+
+    <script>
+      const canvas = document.getElementById("triangleCanvas");
+      const ctx = canvas.getContext("2d");
+
+      const sizeSlider = document.getElementById("sizeSlider");
+      const rotationSlider = document.getElementById("rotationSlider");
+      const sizeValueSpan = document.getElementById("sizeValue");
+      const rotationValueSpan = document.getElementById("rotationValue");
+
+      let triangleSide = parseInt(sizeSlider.value);
+      let rotationAngleDeg = parseInt(rotationSlider.value);
+      let controlsHeight = 0;
+
+      function updateControlsHeight() {
+        const controlsDiv = document.querySelector(".controls");
+        if (controlsDiv) {
+          // Get computed style to include padding and border if box-sizing is border-box
+          const style = window.getComputedStyle(controlsDiv);
+          controlsHeight =
+            parseFloat(style.marginTop) +
+            parseFloat(style.marginBottom) +
+            parseFloat(style.paddingTop) +
+            parseFloat(style.paddingBottom) +
+            parseFloat(style.borderTopWidth) +
+            parseFloat(style.borderBottomWidth) +
+            controlsDiv.offsetHeight +
+            10; // Extra 10 for margin-bottom of .controls
+          // A simpler way if margin-bottom on .controls is consistent:
+          controlsHeight = controlsDiv.offsetHeight + 10; // 10 is the margin-bottom
+        } else {
+          controlsHeight = 50; // Fallback estimate
+        }
+      }
+
+      function setCanvasDimensions() {
+        updateControlsHeight(); // Recalculate in case of dynamic changes, though unlikely here
+        canvas.width = window.innerWidth;
+        // Subtract a bit more to ensure canvas border is visible and no scrollbars
+        canvas.height = window.innerHeight - controlsHeight - 5; // -5 for small buffer
+        if (canvas.height < 50) canvas.height = 50; // Minimum canvas height
+        if (canvas.width < 50) canvas.width = 50; // Minimum canvas width
+        draw();
+      }
+
+      // Function to draw a single equilateral triangle centered at (cx, cy)
+      function drawTriangle(cx, cy, side, angleRad, isPointingUp) {
+        const h = (Math.sqrt(3) / 2) * side; // Height of the equilateral triangle
+
+        // Vertices relative to the center (0,0) before rotation
+        // y positive is downwards in canvas
+        let p1, p2, p3;
+        if (isPointingUp) {
+          // Blue in example
+          p1 = { x: 0, y: -h * (2 / 3) }; // Top vertex
+          p2 = { x: -side / 2, y: h * (1 / 3) }; // Bottom-left vertex
+          p3 = { x: side / 2, y: h * (1 / 3) }; // Bottom-right vertex
+        } else {
+          // Red/Pink in example (Pointing down)
+          p1 = { x: 0, y: h * (2 / 3) }; // Bottom vertex
+          p2 = { x: side / 2, y: -h * (1 / 3) }; // Top-right vertex
+          p3 = { x: -side / 2, y: -h * (1 / 3) }; // Top-left vertex
+        }
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angleRad);
+
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.closePath();
+
+        // Using colors similar to the example image
+        ctx.fillStyle = isPointingUp
+          ? "rgba(173, 216, 230, 0.95)"
+          : "rgba(255, 182, 193, 0.95)"; // LightBlue and LightPink
+        ctx.fill();
+        ctx.strokeStyle = "rgba(120, 120, 120, 0.7)"; // Outline color
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      function draw() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const side = triangleSide;
+        const h = (Math.sqrt(3) / 2) * side;
+        if (side <= 0 || h <= 0) return; // Avoid division by zero or infinite loops if side/h is 0
+        const rotationRad = (rotationAngleDeg * Math.PI) / 180;
+
+        // Margin for drawing off-screen to ensure full coverage.
+        // R (circumradius, distance from center to vertex) = side / sqrt(3) or 2/3 * h.
+        const R = (2 / 3) * h;
+        const loopMargin = R + 5; // Draw triangles whose centers are up to R+5 outside canvas bounds.
+
+        // Iterate over a hexagonal lattice for UP triangles' centers
+        // k_idx determines the "hexagonal row" for UP triangles
+        for (
+          let k_idx = Math.floor(-loopMargin / h) - 1;
+          k_idx * h - R < canvas.height + loopMargin;
+          k_idx++
+        ) {
+          const cy_U_row = k_idx * h;
+          // Stagger odd hexagonal rows (based on k_idx). Handles negative k_idx correctly.
+          const x_offset_hex_row = k_idx % 2 !== 0 ? side / 2 : 0;
+
+          // Iterate for "columns" in the hexagonal row for UP triangles
+          for (
+            let j_idx = Math.floor((-loopMargin - x_offset_hex_row) / side) - 1;
+            j_idx * side + x_offset_hex_row - R < canvas.width + loopMargin;
+            j_idx++
+          ) {
+            const cx_U = j_idx * side + x_offset_hex_row;
+
+            // Draw the UP triangle (blueish)
+            drawTriangle(cx_U, cy_U_row, side, rotationRad, true);
+
+            // Calculate and draw the corresponding DOWN triangle (reddish)
+            // Its center is (side/2, -h/3) relative to the UP triangle's center.
+            // This specific offset ensures they share an edge for perfect tiling (when unrotated).
+            const cx_D = cx_U + side / 2;
+            const cy_D = cy_U_row - h / 3; // y positive is downwards. -h/3 means "physically above" cy_U_row on screen.
+            drawTriangle(cx_D, cy_D, side, rotationRad, false);
+          }
+        }
+      }
+
+      sizeSlider.addEventListener("input", (event) => {
+        triangleSide = parseInt(event.target.value);
+        sizeValueSpan.textContent = triangleSide;
+        if (triangleSide > 0) draw();
+      });
+
+      rotationSlider.addEventListener("input", (event) => {
+        rotationAngleDeg = parseInt(event.target.value);
+        rotationValueSpan.textContent = rotationAngleDeg;
+        draw();
+      });
+
+      // Initial setup
+      document.addEventListener("DOMContentLoaded", () => {
+        updateControlsHeight();
+        setCanvasDimensions(); // This will also call draw()
+        // Update initial slider values display
+        sizeValueSpan.textContent = sizeSlider.value;
+        rotationValueSpan.textContent = rotationSlider.value;
+      });
+      window.addEventListener("resize", setCanvasDimensions);
+
+      // Fallback for immediate execution if DOMContentLoaded already fired (e.g. script at end of body)
+      // This is often not strictly necessary if script is at end of body, but safe.
+      if (
+        document.readyState === "complete" ||
+        document.readyState === "interactive"
+      ) {
+        // Check if already initialized by DOMContentLoaded to prevent double call
+        if (controlsHeight === 0) {
+          // Simple check, assumes controlsHeight gets set
+          updateControlsHeight();
+          setCanvasDimensions();
+          sizeValueSpan.textContent = sizeSlider.value;
+          rotationValueSpan.textContent = rotationSlider.value;
+        }
+      }
+    </script>
+  </body>
+</html>
