@@ -1,305 +1,655 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gear Simulator - Rotational Snap</title>
     <style>
-        :root {
-            --bg-color: #2c3e50;
-            --field-color: #34495e;
-            --control-bg: #ecf0f1;
-            --text-color: #2c3e50;
-            --accent-color: #3498db;
-            --undo-color: #f39c12;
-            --clear-color: #e74c3c;
-            --gear-fill: #95a5a6;
-            --gear-stroke: #7f8c8d;
-            --connection-line: rgba(236, 240, 241, 0.5);
-        }
+      :root {
+        --bg-color: #2c3e50;
+        --field-color: #34495e;
+        --control-bg: #ecf0f1;
+        --text-color: #2c3e50;
+        --accent-color: #3498db;
+        --undo-color: #f39c12;
+        --clear-color: #e74c3c;
+        --gear-fill: #95a5a6;
+        --gear-stroke: #7f8c8d;
+        --connection-line: rgba(236, 240, 241, 0.5);
+      }
 
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-        }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
 
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+        display: flex;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+      }
+
+      #gear-field {
+        flex-grow: 1;
+        position: relative;
+        background-color: var(--field-color);
+        cursor: crosshair;
+        touch-action: none;
+      }
+
+      #control-panel {
+        width: 280px;
+        flex-shrink: 0;
+        padding: 20px;
+        background-color: var(--control-bg);
+        box-shadow: -5px 0 15px rgba(0, 0, 0, 0.2);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        z-index: 100;
+      }
+
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .control-group label {
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        cursor: pointer;
+      }
+      input[type="checkbox"] {
+        transform: scale(1.2);
+        cursor: pointer;
+      }
+
+      button {
+        padding: 12px 15px;
+        border: none;
+        color: white;
+        font-size: 1em;
+        cursor: pointer;
+        border-radius: 5px;
+        transition: background-color 0.2s, opacity 0.2s;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      #add-gear-button {
+        background-color: var(--accent-color);
+      }
+      #add-gear-button:hover:not(:disabled) {
+        background-color: #2980b9;
+      }
+
+      #undo-button {
+        background-color: var(--undo-color);
+      }
+      #undo-button:hover:not(:disabled) {
+        background-color: #d35400;
+      }
+
+      #clear-button {
+        background-color: var(--clear-color);
+      }
+      #clear-button:hover:not(:disabled) {
+        background-color: #c0392b;
+      }
+
+      .gear-svg {
+        position: absolute;
+        transform-origin: center center;
+        cursor: grab; /* Default cursor for gears */
+        filter: drop-shadow(2px 4px 6px rgba(0, 0, 0, 0.3));
+      }
+      /* .gear-svg:active style for cursor: grabbing; is now handled by JS for more control */
+
+      .gear-path {
+        fill: var(--gear-fill);
+        stroke: var(--gear-stroke);
+        stroke-width: 2;
+      }
+      #connection-lines-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: -1;
+      }
+      .connection-line {
+        stroke: var(--connection-line);
+        stroke-width: 2;
+        stroke-dasharray: 5, 5;
+      }
+      h2 {
+        margin-top: 0;
+        text-align: center;
+      }
+
+      @media (max-width: 768px) {
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            display: flex;
-            background-color: var(--bg-color);
-            color: var(--text-color);
+          flex-direction: column-reverse;
         }
-
-        #gear-field {
-            flex-grow: 1;
-            position: relative;
-            background-color: var(--field-color);
-            cursor: crosshair;
-            touch-action: none;
-        }
-
         #control-panel {
-            width: 280px;
-            flex-shrink: 0;
-            padding: 20px;
-            background-color: var(--control-bg);
-            box-shadow: -5px 0 15px rgba(0,0,0,0.2);
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            z-index: 100;
+          width: 100%;
+          height: auto;
+          flex-direction: row;
+          flex-wrap: wrap;
+          justify-content: space-around;
+          align-items: center;
+          padding: 10px;
+          gap: 15px;
+          box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.2);
         }
-
+        #control-panel h2 {
+          display: none;
+        }
         .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+          flex: 1 1 120px;
+          gap: 5px;
         }
-
         .control-group label {
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+          flex-direction: column; /* Stack label text and checkbox vertically */
+          gap: 4px;
+          font-size: 0.9em;
+          /* align-items: flex-start; /* Align items to start for column layout */
         }
-
-        input[type="range"] { width: 100%; cursor: pointer; }
-        input[type="checkbox"] { transform: scale(1.2); cursor: pointer; }
-
-        button {
-            padding: 12px 15px;
-            border: none;
-            color: white;
-            font-size: 1em;
-            cursor: pointer;
-            border-radius: 5px;
-            transition: background-color 0.2s, opacity 0.2s;
-            -webkit-tap-highlight-color: transparent;
+        .control-group label input[type="checkbox"] {
+          margin-top: 4px; /* Space between label text and checkbox */
+          align-self: center; /* Center checkbox in column layout if label text is wider */
         }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .button-group {
+          flex-basis: 100%;
+          display: flex;
+          gap: 10px;
         }
-
-        #add-gear-button { background-color: var(--accent-color); }
-        #add-gear-button:hover:not(:disabled) { background-color: #2980b9; }
-
-        #undo-button { background-color: var(--undo-color); }
-        #undo-button:hover:not(:disabled) { background-color: #d35400; }
-
-        #clear-button { background-color: var(--clear-color); }
-        #clear-button:hover:not(:disabled) { background-color: #c0392b; }
-
-        .gear-svg {
-            position: absolute;
-            transform-origin: center center;
-            cursor: grab;
-            filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.3));
+        .button-group button {
+          flex-grow: 1;
         }
-        .gear-svg:active { cursor: grabbing; }
-        .gear-path { fill: var(--gear-fill); stroke: var(--gear-stroke); stroke-width: 2; }
-        #connection-lines-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }
-        .connection-line { stroke: var(--connection-line); stroke-width: 2; stroke-dasharray: 5, 5; }
-        h2 { margin-top: 0; text-align: center; }
-        
-        @media (max-width: 768px) {
-            body { flex-direction: column-reverse; }
-            #control-panel {
-                width: 100%; height: auto; flex-direction: row; flex-wrap: wrap;
-                justify-content: space-around; align-items: center;
-                padding: 10px; gap: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.2);
-            }
-            #control-panel h2 { display: none; }
-            .control-group { flex: 1 1 120px; gap: 5px; }
-            .control-group label { flex-direction: column; gap: 4px; font-size: 0.9em; }
-            .button-group { flex-basis: 100%; display: flex; gap: 10px; }
-            .button-group button { flex-grow: 1; }
-        }
+      }
     </style>
-</head>
-<body>
-
+  </head>
+  <body>
     <div id="gear-field"></div>
 
     <div id="control-panel">
-        <h2>Gear Controls</h2>
-        <div class="control-group">
-            <label for="radius-slider">Radius: <span id="radius-value">80</span></label>
-            <input type="range" id="radius-slider" min="30" max="150" value="80">
-        </div>
-        <div class="control-group">
-            <label for="show-connections">Show Links</label>
-            <input type="checkbox" id="show-connections" checked>
-        </div>
-        <div class="button-group">
-            <button id="add-gear-button">Add Gear</button>
-            <button id="undo-button">Undo</button>
-            <button id="clear-button">Clear</button>
-        </div>
+      <h2>Gear Controls</h2>
+      <div class="control-group">
+        <label for="radius-slider"
+          >Radius: <span id="radius-value">80</span></label
+        >
+        <input type="range" id="radius-slider" min="30" max="150" value="80" />
+      </div>
+      <div class="control-group">
+        <label for="show-connections"
+          >Show Links
+          <input type="checkbox" id="show-connections" checked />
+        </label>
+      </div>
+      <div class="control-group">
+        <!-- New Control Group for Delete Mode -->
+        <label for="delete-mode-toggle"
+          >Delete Mode
+          <input type="checkbox" id="delete-mode-toggle" />
+        </label>
+      </div>
+      <div class="button-group">
+        <button id="add-gear-button">Add Gear</button>
+        <button id="undo-button">Undo</button>
+        <button id="clear-button">Clear</button>
+      </div>
     </div>
 
     <script>
-        // --- Fixed Gear Geometry ---
-        const FIXED_TOOTH_HEIGHT = 10;
-        const FIXED_TOOTH_SIZE = 22;
-        
-        // DOM Elements and State
-        const gearField = document.getElementById('gear-field');
-        const addGearButton = document.getElementById('add-gear-button');
-        const undoButton = document.getElementById('undo-button');
-        const clearButton = document.getElementById('clear-button');
-        const radiusSlider = document.getElementById('radius-slider');
-        const radiusValueSpan = document.getElementById('radius-value');
-        const showConnectionsCheckbox = document.getElementById('show-connections');
-        let gears = [], undoStack = [], gearCounter = 0, activeDragGear = null, lastMouseAngle = 0;
-        let connectionLinesSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        connectionLinesSVG.id = 'connection-lines-svg';
-        gearField.appendChild(connectionLinesSVG);
+      // --- Fixed Gear Geometry ---
+      const FIXED_TOOTH_HEIGHT = 10;
+      const FIXED_TOOTH_SIZE = 22;
 
-        class Gear { /* Class definition is unchanged */
-            constructor(x, y, radius, id = null, angle = 0) {
-                this.id = (id !== null) ? id : gearCounter++; this.x = x; this.y = y; this.radius = radius; this.angle = angle;
-                this.pitchRadius = this.radius - (FIXED_TOOTH_HEIGHT / 2);
-                const pitchCircumference = 2 * Math.PI * this.pitchRadius;
-                this.teeth = Math.max(5, Math.round(pitchCircumference / FIXED_TOOTH_SIZE));
-                this.connections = []; this.element = this.createGearElement(); gearField.appendChild(this.element);
-                this.updateRotation(0); this.addEventListeners();
-            }
-            createGearElement() {
-                const svgNS = "http://www.w3.org/2000/svg";
-                const svg = document.createElementNS(svgNS, "svg");
-                const size = this.radius * 2;
-                svg.setAttribute("class", "gear-svg"); svg.setAttribute("width", size); svg.setAttribute("height", size);
-                svg.style.left = `${this.x - this.radius}px`; svg.style.top = `${this.y - this.radius}px`; svg.dataset.id = this.id;
-                const path = document.createElementNS(svgNS, "path");
-                path.setAttribute("class", "gear-path"); path.setAttribute("d", this.generateGearPath()); path.style.fillRule = 'evenodd';
-                svg.appendChild(path); return svg;
-            }
-            generateGearPath() {
-                const outerRadius = this.radius; const innerRadius = this.radius - FIXED_TOOTH_HEIGHT; let pathData = "";
-                for (let i = 0; i < this.teeth; i++) {
-                    const angle = (i / this.teeth) * 2 * Math.PI; const nextAngle = ((i + 0.5) / this.teeth) * 2 * Math.PI; const halfTooth = (1 / this.teeth) * Math.PI * 0.4;
-                    const p1x = this.radius + outerRadius * Math.cos(angle - halfTooth); const p1y = this.radius + outerRadius * Math.sin(angle - halfTooth);
-                    if (i === 0) pathData += `M ${p1x} ${p1y} `; else pathData += `L ${p1x} ${p1y} `;
-                    const p2x = this.radius + outerRadius * Math.cos(angle + halfTooth); const p2y = this.radius + outerRadius * Math.sin(angle + halfTooth);
-                    pathData += `A ${outerRadius} ${outerRadius} 0 0 1 ${p2x} ${p2y} `;
-                    const p3x = this.radius + innerRadius * Math.cos(nextAngle - halfTooth); const p3y = this.radius + innerRadius * Math.sin(nextAngle - halfTooth);
-                    pathData += `L ${p3x} ${p3y} `;
-                    const p4x = this.radius + innerRadius * Math.cos(nextAngle + halfTooth); const p4y = this.radius + innerRadius * Math.sin(nextAngle + halfTooth);
-                    pathData += `A ${innerRadius} ${innerRadius} 0 0 1 ${p4x} ${p4y} `;
-                }
-                pathData += "Z "; const holeRadius = Math.max(5, this.radius * 0.2);
-                pathData += `M ${this.radius + holeRadius}, ${this.radius} A ${holeRadius},${holeRadius} 0 1,0 ${this.radius - holeRadius},${this.radius} A ${holeRadius},${holeRadius} 0 1,0 ${this.radius + holeRadius},${this.radius} Z`;
-                return pathData;
-            }
-            addEventListeners() {
-                this.element.addEventListener('pointerdown', (e) => {
-                    e.preventDefault(); e.stopPropagation(); activeDragGear = this;
-                    const rect = this.element.getBoundingClientRect(); const centerX = rect.left + rect.width / 2; const centerY = rect.top + rect.height / 2;
-                    lastMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-                });
-            }
-            updateRotation(deltaAngle) { this.angle += deltaAngle; this.element.style.transform = `rotate(${this.angle * 180 / Math.PI}deg)`; }
-            serialize() { return { id: this.id, x: this.x, y: this.y, radius: this.radius, angle: this.angle }; }
+      // DOM Elements and State
+      const gearField = document.getElementById("gear-field");
+      const addGearButton = document.getElementById("add-gear-button");
+      const undoButton = document.getElementById("undo-button");
+      const clearButton = document.getElementById("clear-button");
+      const radiusSlider = document.getElementById("radius-slider");
+      const radiusValueSpan = document.getElementById("radius-value");
+      const showConnectionsCheckbox =
+        document.getElementById("show-connections");
+      const deleteModeToggle = document.getElementById("delete-mode-toggle"); // New DOM element
+
+      let gears = [],
+        undoStack = [],
+        gearCounter = 0,
+        activeDragGear = null,
+        lastMouseAngle = 0;
+      let isDeleteModeActive = false; // New state variable
+
+      let connectionLinesSVG = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg"
+      );
+      connectionLinesSVG.id = "connection-lines-svg";
+      gearField.appendChild(connectionLinesSVG);
+
+      class Gear {
+        constructor(x, y, radius, id = null, angle = 0) {
+          this.id = id !== null ? id : gearCounter++;
+          this.x = x;
+          this.y = y;
+          this.radius = radius;
+          this.angle = angle;
+          this.pitchRadius = this.radius - FIXED_TOOTH_HEIGHT / 2;
+          const pitchCircumference = 2 * Math.PI * this.pitchRadius;
+          this.teeth = Math.max(
+            5,
+            Math.round(pitchCircumference / FIXED_TOOTH_SIZE)
+          );
+          this.connections = [];
+          this.element = this.createGearElement();
+          gearField.appendChild(this.element);
+          this.updateRotation(0);
+          this.addEventListeners();
         }
-        
-        function findSnapPosition(cursorX, cursorY) {
-            const newGearRadius = parseInt(radiusSlider.value);
-            const newGearPitchRadius = newGearRadius - (FIXED_TOOTH_HEIGHT / 2);
-            let bestSnap = { position: null, distance: Infinity, parentGear: null };
-            const snapThreshold = newGearRadius * 1.5;
+        createGearElement() {
+          const svgNS = "http://www.w3.org/2000/svg";
+          const svg = document.createElementNS(svgNS, "svg");
+          const size = this.radius * 2;
+          svg.setAttribute("class", "gear-svg");
+          svg.setAttribute("width", size);
+          svg.setAttribute("height", size);
+          svg.style.left = `${this.x - this.radius}px`;
+          svg.style.top = `${this.y - this.radius}px`;
+          svg.dataset.id = this.id;
+          const path = document.createElementNS(svgNS, "path");
+          path.setAttribute("class", "gear-path");
+          path.setAttribute("d", this.generateGearPath());
+          path.style.fillRule = "evenodd";
+          svg.appendChild(path);
+          return svg;
+        }
+        generateGearPath() {
+          const outerRadius = this.radius;
+          const innerRadius = this.radius - FIXED_TOOTH_HEIGHT;
+          let pathData = "";
+          for (let i = 0; i < this.teeth; i++) {
+            const angle = (i / this.teeth) * 2 * Math.PI;
+            const nextAngle = ((i + 0.5) / this.teeth) * 2 * Math.PI;
+            const halfTooth = (1 / this.teeth) * Math.PI * 0.4;
+            const p1x = this.radius + outerRadius * Math.cos(angle - halfTooth);
+            const p1y = this.radius + outerRadius * Math.sin(angle - halfTooth);
+            if (i === 0) pathData += `M ${p1x} ${p1y} `;
+            else pathData += `L ${p1x} ${p1y} `;
+            const p2x = this.radius + outerRadius * Math.cos(angle + halfTooth);
+            const p2y = this.radius + outerRadius * Math.sin(angle + halfTooth);
+            pathData += `A ${outerRadius} ${outerRadius} 0 0 1 ${p2x} ${p2y} `;
+            const p3x =
+              this.radius + innerRadius * Math.cos(nextAngle - halfTooth);
+            const p3y =
+              this.radius + innerRadius * Math.sin(nextAngle - halfTooth);
+            pathData += `L ${p3x} ${p3y} `;
+            const p4x =
+              this.radius + innerRadius * Math.cos(nextAngle + halfTooth);
+            const p4y =
+              this.radius + innerRadius * Math.sin(nextAngle + halfTooth);
+            pathData += `A ${innerRadius} ${innerRadius} 0 0 1 ${p4x} ${p4y} `;
+          }
+          pathData += "Z ";
+          const holeRadius = Math.max(5, this.radius * 0.2);
+          pathData += `M ${this.radius + holeRadius}, ${
+            this.radius
+          } A ${holeRadius},${holeRadius} 0 1,0 ${this.radius - holeRadius},${
+            this.radius
+          } A ${holeRadius},${holeRadius} 0 1,0 ${this.radius + holeRadius},${
+            this.radius
+          } Z`;
+          return pathData;
+        }
+        addEventListeners() {
+          this.element.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Prevent gearField click when clicking a gear
 
-            for (const existingGear of gears) {
-                const idealMeshDistance = existingGear.pitchRadius + newGearPitchRadius;
-                const vecX = cursorX - existingGear.x;
-                const vecY = cursorY - existingGear.y;
-                const distToCursor = Math.sqrt(vecX**2 + vecY**2);
-                if (distToCursor === 0) continue;
-                const unitVecX = vecX / distToCursor;
-                const unitVecY = vecY / distToCursor;
-                const snapX = existingGear.x + unitVecX * idealMeshDistance;
-                const snapY = existingGear.y + unitVecY * idealMeshDistance;
-                const snapPointDistToCursor = Math.sqrt((snapX - cursorX)**2 + (snapY - cursorY)**2);
-                if (snapPointDistToCursor < bestSnap.distance) {
-                    bestSnap.distance = snapPointDistToCursor;
-                    bestSnap.position = { x: snapX, y: snapY };
-                    bestSnap.parentGear = existingGear; // Store the gear we are snapping to
-                }
-            }
-            
-            if (bestSnap.position && bestSnap.distance < snapThreshold) {
-                // --- NEW ROTATION CALCULATION ---
-                const parentGear = bestSnap.parentGear;
-                
-                // 1. Calculate the number of teeth the new gear will have.
-                const newPitchCircumference = 2 * Math.PI * newGearPitchRadius;
-                const newTeethCount = Math.max(5, Math.round(newPitchCircumference / FIXED_TOOTH_SIZE));
-
-                // 2. Calculate the angle from parent to new gear.
-                const connectionAngle = Math.atan2(
-                    bestSnap.position.y - parentGear.y, 
-                    bestSnap.position.x - parentGear.x
-                );
-                
-                // 3. Calculate the initial angle for perfect meshing.
-                // It's the parent's angle, mirrored, plus a half-tooth offset for the new gear.
-                let initialAngle = parentGear.angle + (connectionAngle - parentGear.angle) * 2 + Math.PI;
-                initialAngle += Math.PI / newTeethCount; // Add the half-tooth offset.
-
-                return { position: bestSnap.position, initialAngle: initialAngle };
+            if (isDeleteModeActive) {
+              deleteGearById(this.id);
             } else {
-                return { position: { x: cursorX, y: cursorY }, initialAngle: 0 };
+              activeDragGear = this;
+              this.element.style.cursor = "grabbing"; // Change cursor to grabbing for active drag
+              const rect = this.element.getBoundingClientRect();
+              const centerX = rect.left + rect.width / 2;
+              const centerY = rect.top + rect.height / 2;
+              lastMouseAngle = Math.atan2(
+                e.clientY - centerY,
+                e.clientX - centerX
+              );
             }
+          });
+
+          this.element.addEventListener("mouseenter", () => {
+            if (isDeleteModeActive) {
+              this.element.style.cursor = "no-drop";
+            } else if (activeDragGear !== this) {
+              // Don't change to 'grab' if it's currently 'grabbing'
+              this.element.style.cursor = "grab";
+            }
+          });
+
+          this.element.addEventListener("mouseleave", () => {
+            // Revert to default cursor (grab via CSS) unless it's being actively dragged
+            if (activeDragGear !== this) {
+              this.element.style.cursor = "";
+            }
+          });
+        }
+        updateRotation(deltaAngle) {
+          this.angle += deltaAngle;
+          this.element.style.transform = `rotate(${
+            (this.angle * 180) / Math.PI
+          }deg)`;
+        }
+        serialize() {
+          return {
+            id: this.id,
+            x: this.x,
+            y: this.y,
+            radius: this.radius,
+            angle: this.angle,
+          };
+        }
+      }
+
+      function findSnapPosition(cursorX, cursorY) {
+        const newGearRadius = parseInt(radiusSlider.value);
+        const newGearPitchRadius = newGearRadius - FIXED_TOOTH_HEIGHT / 2;
+        let bestSnap = { position: null, distance: Infinity, parentGear: null };
+        const snapThreshold = newGearRadius * 1.5; // Threshold for snapping
+
+        for (const existingGear of gears) {
+          const idealMeshDistance =
+            existingGear.pitchRadius + newGearPitchRadius;
+          const vecX = cursorX - existingGear.x;
+          const vecY = cursorY - existingGear.y;
+          const distToCursor = Math.sqrt(vecX ** 2 + vecY ** 2);
+          if (distToCursor === 0) continue; // Avoid division by zero if cursor is exactly on gear center
+
+          const unitVecX = vecX / distToCursor;
+          const unitVecY = vecY / distToCursor;
+          const snapX = existingGear.x + unitVecX * idealMeshDistance;
+          const snapY = existingGear.y + unitVecY * idealMeshDistance;
+
+          const snapPointDistToCursor = Math.sqrt(
+            (snapX - cursorX) ** 2 + (snapY - cursorY) ** 2
+          );
+
+          if (snapPointDistToCursor < bestSnap.distance) {
+            bestSnap.distance = snapPointDistToCursor;
+            bestSnap.position = { x: snapX, y: snapY };
+            bestSnap.parentGear = existingGear;
+          }
         }
 
-        // Modified to accept an initial angle
-        function addNewGear(x, y, initialAngle = 0) {
-            const radius = parseInt(radiusSlider.value);
-            // Pass the initialAngle to the constructor
-            const newGear = new Gear(x, y, radius, null, initialAngle);
-            gears.push(newGear);
-            undoStack.push({ type: 'add', gearId: newGear.id });
-            rebuildConnections();
-            updateButtonStates();
+        if (bestSnap.position && bestSnap.distance < snapThreshold) {
+          const parentGear = bestSnap.parentGear;
+          const newPitchCircumference = 2 * Math.PI * newGearPitchRadius;
+          const newTeethCount = Math.max(
+            5,
+            Math.round(newPitchCircumference / FIXED_TOOTH_SIZE)
+          );
+          const connectionAngle = Math.atan2(
+            bestSnap.position.y - parentGear.y,
+            bestSnap.position.x - parentGear.x
+          );
+          let initialAngle =
+            parentGear.angle +
+            (connectionAngle - parentGear.angle) * 2 +
+            Math.PI;
+          initialAngle += Math.PI / newTeethCount;
+          return { position: bestSnap.position, initialAngle: initialAngle };
+        } else {
+          return { position: { x: cursorX, y: cursorY }, initialAngle: 0 };
         }
-        
-        // --- Other functions (unchanged) ---
-        function handleRotation(drivenGear, angleDelta) { const updatedInThisTurn = new Set(); drivenGear.updateRotation(angleDelta); updatedInThisTurn.add(drivenGear.id); propagate(drivenGear, angleDelta, updatedInThisTurn); }
-        function propagate(sourceGear, sourceAngleDelta, updatedInThisTurn) { sourceGear.connections.forEach(connectedGear => { if (updatedInThisTurn.has(connectedGear.id)) { return; } const ratio = sourceGear.teeth / connectedGear.teeth; const newAngleDelta = -sourceAngleDelta * ratio; connectedGear.updateRotation(newAngleDelta); updatedInThisTurn.add(connectedGear.id); propagate(connectedGear, newAngleDelta, updatedInThisTurn); }); }
-        function rebuildConnections() { gears.forEach(gear => gear.connections = []); for (let i = 0; i < gears.length; i++) { for (let j = i + 1; j < gears.length; j++) { const g1 = gears[i]; const g2 = gears[j]; const distance = Math.sqrt((g1.x - g2.x)**2 + (g1.y - g2.y)**2); const idealMeshDistance = g1.pitchRadius + g2.pitchRadius; if (distance < idealMeshDistance * 1.05 && distance > idealMeshDistance * 0.95) { g1.connections.push(g2); g2.connections.push(g1); } } } drawConnectionLines(); }
-        function performUndo() { if (undoStack.length === 0) return; const lastAction = undoStack.pop(); if (lastAction.type === 'add') { const gearIndex = gears.findIndex(g => g.id === lastAction.gearId); if (gearIndex > -1) { gears[gearIndex].element.remove(); gears.splice(gearIndex, 1); } } else if (lastAction.type === 'clear') { lastAction.clearedGears.forEach(gData => { const newGear = new Gear(gData.x, gData.y, gData.radius, gData.id, gData.angle); gears.push(newGear); }); } rebuildConnections(); updateButtonStates(); }
-        function drawConnectionLines() { connectionLinesSVG.innerHTML = ''; if (!showConnectionsCheckbox.checked) return; const drawnConnections = new Set(); gears.forEach(gear => { gear.connections.forEach(conn => { const id1 = Math.min(gear.id, conn.id); const id2 = Math.max(gear.id, conn.id); const connectionId = `${id1}-${id2}`; if (!drawnConnections.has(connectionId)) { const line = document.createElementNS("http://www.w3.org/2000/svg", "line"); line.setAttribute('x1', gear.x); line.setAttribute('y1', gear.y); line.setAttribute('x2', conn.x); line.setAttribute('y2', conn.y); line.setAttribute('class', 'connection-line'); connectionLinesSVG.appendChild(line); drawnConnections.add(connectionId); } }); }); }
-        function updateButtonStates() { undoButton.disabled = undoStack.length === 0; clearButton.disabled = gears.length === 0; }
-        
-        // --- Event Listeners ---
-        radiusSlider.addEventListener('input', (e) => radiusValueSpan.textContent = e.target.value);
-        showConnectionsCheckbox.addEventListener('change', drawConnectionLines);
-        addGearButton.addEventListener('click', () => { const fieldRect = gearField.getBoundingClientRect(); addNewGear(fieldRect.width / 2, fieldRect.height / 2); });
-        undoButton.addEventListener('click', performUndo);
-        clearButton.addEventListener('click', () => { if (gears.length === 0) return; const serializedGears = gears.map(g => g.serialize()); undoStack.push({ type: 'clear', clearedGears: serializedGears }); gears.forEach(g => g.element.remove()); gears = []; rebuildConnections(); updateButtonStates(); });
-        window.addEventListener('pointermove', (e) => { if (!activeDragGear) return; const rect = activeDragGear.element.getBoundingClientRect(); const centerX = rect.left + rect.width / 2; const centerY = rect.top + rect.height / 2; const currentMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX); let angleDelta = currentMouseAngle - lastMouseAngle; if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI; if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI; lastMouseAngle = currentMouseAngle; handleRotation(activeDragGear, angleDelta); });
-        window.addEventListener('pointerup', () => { activeDragGear = null; });
-        gearField.addEventListener('pointerdown', (e) => {
-            if (e.target === gearField || e.target === connectionLinesSVG) {
-                const rect = gearField.getBoundingClientRect();
-                const cursorX = e.clientX - rect.left;
-                const cursorY = e.clientY - rect.top;
-                // findSnapPosition now returns an object with position and initialAngle
-                const placement = findSnapPosition(cursorX, cursorY);
-                addNewGear(placement.position.x, placement.position.y, placement.initialAngle);
-            }
+      }
+
+      function addNewGear(x, y, initialAngle = 0) {
+        const radius = parseInt(radiusSlider.value);
+        const newGear = new Gear(x, y, radius, null, initialAngle);
+        gears.push(newGear);
+        undoStack.push({ type: "add", gearId: newGear.id });
+        rebuildConnections();
+        updateButtonStates();
+      }
+
+      function deleteGearById(gearIdToDelete) {
+        const gearIndex = gears.findIndex((g) => g.id === gearIdToDelete);
+        if (gearIndex > -1) {
+          const deletedGear = gears[gearIndex];
+
+          undoStack.push({ type: "delete", gearData: deletedGear.serialize() });
+
+          deletedGear.element.remove();
+          gears.splice(gearIndex, 1);
+
+          if (activeDragGear && activeDragGear.id === gearIdToDelete) {
+            activeDragGear = null;
+          }
+
+          rebuildConnections();
+          updateButtonStates();
+        }
+      }
+
+      function handleRotation(drivenGear, angleDelta) {
+        const updatedInThisTurn = new Set();
+        drivenGear.updateRotation(angleDelta);
+        updatedInThisTurn.add(drivenGear.id);
+        propagate(drivenGear, angleDelta, updatedInThisTurn);
+      }
+      function propagate(sourceGear, sourceAngleDelta, updatedInThisTurn) {
+        sourceGear.connections.forEach((connectedGear) => {
+          if (updatedInThisTurn.has(connectedGear.id)) {
+            return;
+          }
+          const ratio = sourceGear.teeth / connectedGear.teeth;
+          const newAngleDelta = -sourceAngleDelta * ratio;
+          connectedGear.updateRotation(newAngleDelta);
+          updatedInThisTurn.add(connectedGear.id);
+          propagate(connectedGear, newAngleDelta, updatedInThisTurn);
         });
-
-        function initialize() {
-            const fieldRect = gearField.getBoundingClientRect();
-            addNewGear(fieldRect.width / 2, fieldRect.height / 2);
-            undoStack = [];
-            updateButtonStates();
+      }
+      function rebuildConnections() {
+        gears.forEach((gear) => (gear.connections = []));
+        for (let i = 0; i < gears.length; i++) {
+          for (let j = i + 1; j < gears.length; j++) {
+            const g1 = gears[i];
+            const g2 = gears[j];
+            const distance = Math.sqrt((g1.x - g2.x) ** 2 + (g1.y - g2.y) ** 2);
+            const idealMeshDistance = g1.pitchRadius + g2.pitchRadius;
+            if (
+              Math.abs(distance - idealMeshDistance) <
+              idealMeshDistance * 0.05
+            ) {
+              g1.connections.push(g2);
+              g2.connections.push(g1);
+            }
+          }
         }
-        initialize();
+        drawConnectionLines();
+      }
+
+      function performUndo() {
+        if (undoStack.length === 0) return;
+        const lastAction = undoStack.pop();
+
+        if (lastAction.type === "add") {
+          const gearIndex = gears.findIndex((g) => g.id === lastAction.gearId);
+          if (gearIndex > -1) {
+            if (activeDragGear && activeDragGear.id === lastAction.gearId)
+              activeDragGear = null;
+            gears[gearIndex].element.remove();
+            gears.splice(gearIndex, 1);
+          }
+        } else if (lastAction.type === "clear") {
+          lastAction.clearedGears.forEach((gData) => {
+            const newGear = new Gear(
+              gData.x,
+              gData.y,
+              gData.radius,
+              gData.id,
+              gData.angle
+            );
+            gears.push(newGear);
+          });
+        } else if (lastAction.type === "delete") {
+          const gData = lastAction.gearData;
+          const reAddedGear = new Gear(
+            gData.x,
+            gData.y,
+            gData.radius,
+            gData.id,
+            gData.angle
+          );
+          gears.push(reAddedGear);
+        }
+        rebuildConnections();
+        updateButtonStates();
+      }
+
+      function drawConnectionLines() {
+        connectionLinesSVG.innerHTML = "";
+        if (!showConnectionsCheckbox.checked) return;
+        const drawnConnections = new Set();
+        gears.forEach((gear) => {
+          gear.connections.forEach((conn) => {
+            const id1 = Math.min(gear.id, conn.id);
+            const id2 = Math.max(gear.id, conn.id);
+            const connectionId = `${id1}-${id2}`;
+            if (!drawnConnections.has(connectionId)) {
+              const line = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "line"
+              );
+              line.setAttribute("x1", gear.x);
+              line.setAttribute("y1", gear.y);
+              line.setAttribute("x2", conn.x);
+              line.setAttribute("y2", conn.y);
+              line.setAttribute("class", "connection-line");
+              connectionLinesSVG.appendChild(line);
+              drawnConnections.add(connectionId);
+            }
+          });
+        });
+      }
+      function updateButtonStates() {
+        undoButton.disabled = undoStack.length === 0;
+        clearButton.disabled = gears.length === 0;
+      }
+
+      // --- Event Listeners ---
+      radiusSlider.addEventListener(
+        "input",
+        (e) => (radiusValueSpan.textContent = e.target.value)
+      );
+      showConnectionsCheckbox.addEventListener("change", drawConnectionLines);
+      addGearButton.addEventListener("click", () => {
+        const fieldRect = gearField.getBoundingClientRect();
+        addNewGear(fieldRect.width / 2, fieldRect.height / 2);
+      });
+      undoButton.addEventListener("click", performUndo);
+      clearButton.addEventListener("click", () => {
+        if (gears.length === 0) return;
+        const serializedGears = gears.map((g) => g.serialize());
+        undoStack.push({ type: "clear", clearedGears: serializedGears });
+        gears.forEach((g) => g.element.remove());
+        gears = [];
+        activeDragGear = null; // Clear active drag gear on clear
+        rebuildConnections();
+        updateButtonStates();
+      });
+
+      deleteModeToggle.addEventListener("change", (e) => {
+        isDeleteModeActive = e.target.checked;
+
+        // If activating delete mode while a gear is being dragged, cancel the drag.
+        if (isDeleteModeActive && activeDragGear) {
+          activeDragGear.element.style.cursor = ""; // Revert cursor from 'grabbing'
+          activeDragGear = null;
+        }
+
+        // Update cursor of any gear currently being hovered
+        const hoveredGearSvg = document.querySelector(".gear-svg:hover");
+        if (hoveredGearSvg) {
+          if (isDeleteModeActive) {
+            hoveredGearSvg.style.cursor = "no-drop";
+          } else {
+            hoveredGearSvg.style.cursor = "grab"; // Or '' to rely on CSS
+          }
+        }
+      });
+
+      window.addEventListener("pointermove", (e) => {
+        if (!activeDragGear || isDeleteModeActive) return; // Don't drag if in delete mode or no gear active
+
+        const rect = activeDragGear.element.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const currentMouseAngle = Math.atan2(
+          e.clientY - centerY,
+          e.clientX - centerX
+        );
+        let angleDelta = currentMouseAngle - lastMouseAngle;
+        if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+        if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+        lastMouseAngle = currentMouseAngle;
+        handleRotation(activeDragGear, angleDelta);
+      });
+
+      window.addEventListener("pointerup", () => {
+        if (activeDragGear) {
+          activeDragGear.element.style.cursor = ""; // Revert cursor from 'grabbing' to CSS default
+        }
+        activeDragGear = null;
+      });
+
+      gearField.addEventListener("pointerdown", (e) => {
+        // This listener fires if the click was not on a gear (due to gear's stopPropagation)
+        // It allows adding gears by clicking on the field, regardless of delete mode.
+        if (e.target === gearField || e.target === connectionLinesSVG) {
+          const rect = gearField.getBoundingClientRect();
+          const cursorX = e.clientX - rect.left;
+          const cursorY = e.clientY - rect.top;
+          const placement = findSnapPosition(cursorX, cursorY);
+          addNewGear(
+            placement.position.x,
+            placement.position.y,
+            placement.initialAngle
+          );
+        }
+      });
+
+      function initialize() {
+        const fieldRect = gearField.getBoundingClientRect();
+        addNewGear(fieldRect.width / 2, fieldRect.height / 2);
+        undoStack = []; // Clear undo stack on init
+        updateButtonStates();
+      }
+      initialize();
     </script>
-</body>
+  </body>
 </html>
