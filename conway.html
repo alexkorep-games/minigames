@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conway's Game of Life</title>
+    <style>
+        /* Basic Styles & Mobile First Approach */
+        :root {
+            --bg-color: #1a1a1a;
+            --grid-color: #333;
+            --cell-color: #00ddff;
+            --text-color: #f0f0f0;
+            --control-bg: #2a2a2a;
+            --button-bg: #007bff;
+            --button-hover-bg: #0056b3;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden; /* Prevents scrollbars from interfering with layout */
+        }
+
+        header {
+            padding: 10px;
+            background-color: var(--control-bg);
+            border-bottom: 2px solid var(--grid-color);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+
+        /* Controls Panel */
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            padding: 10px;
+            background-color: var(--control-bg);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 8px;
+            border-radius: 5px;
+            background-color: #3a3a3a;
+        }
+
+        .control-group label {
+            font-size: 0.8em;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .input-pair {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .control-group input[type="number"] {
+            width: 45px;
+            padding: 5px;
+            text-align: center;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--grid-color);
+            border-radius: 3px;
+        }
+        /* Hide number input spinners for a cleaner look */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        
+        .control-group input[type="range"] {
+            width: 120px;
+        }
+
+        .control-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+
+        button {
+            padding: 10px 15px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--button-bg);
+            color: white;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--button-hover-bg);
+        }
+        
+        #run-pause-button.running {
+            background-color: #dc3545; /* Red when running */
+        }
+        #run-pause-button.running:hover {
+            background-color: #a71d2a;
+        }
+
+        /* Main Game Area */
+        main {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        canvas {
+            background-color: var(--bg-color);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Conway's Game of Life</h1>
+    </header>
+
+    <div id="controls">
+        <!-- Main Actions -->
+        <div class="control-group">
+            <label>Actions</label>
+            <div class="input-pair">
+                <button id="run-pause-button">Run</button>
+                <button id="clear-button">Clear</button>
+                <button id="random-button">Random</button>
+            </div>
+        </div>
+
+        <!-- Speed Control -->
+        <div class="control-group">
+            <label for="speed-slider">Speed: <span id="speed-value">10</span> TPS</label>
+            <input type="range" id="speed-slider" min="1" max="60" value="10">
+        </div>
+
+        <!-- Zoom Controls -->
+        <div class="control-group">
+            <label>Zoom</label>
+            <div class="input-pair">
+                <button id="zoom-in-button">+</button>
+                <button id="zoom-out-button">-</button>
+            </div>
+        </div>
+
+        <!-- Survival Rules -->
+        <div class="control-group">
+            <label>Alive cell survives if neighbors are:</label>
+            <div class="input-pair">
+                <input type="number" id="min-survive" value="2" min="0" max="8">
+                <span>to</span>
+                <input type="number" id="max-survive" value="3" min="0" max="8">
+            </div>
+        </div>
+
+        <!-- Birth Rules -->
+        <div class="control-group">
+            <label>Empty cell is born if neighbors are:</label>
+            <div class="input-pair">
+                <input type="number" id="min-birth" value="3" min="0" max="8">
+                <span>to</span>
+                <input type="number" id="max-birth" value="3" min="0" max="8">
+            </div>
+        </div>
+        
+        <!-- Neighbor Calculation -->
+        <div class="control-group">
+            <label for="diagonals-checkbox">Count Diagonals?</label>
+            <input type="checkbox" id="diagonals-checkbox" checked>
+        </div>
+    </div>
+
+    <main id="canvas-container">
+        <canvas id="game-canvas"></canvas>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const canvasContainer = document.getElementById('canvas-container');
+            
+            const runPauseButton = document.getElementById('run-pause-button');
+            const clearButton = document.getElementById('clear-button');
+            const randomButton = document.getElementById('random-button'); // New Button
+            const zoomInButton = document.getElementById('zoom-in-button');
+            const zoomOutButton = document.getElementById('zoom-out-button');
+            const speedSlider = document.getElementById('speed-slider');
+            const speedValueSpan = document.getElementById('speed-value');
+            
+            const minSurviveInput = document.getElementById('min-survive');
+            const maxSurviveInput = document.getElementById('max-survive');
+            const minBirthInput = document.getElementById('min-birth');
+            const maxBirthInput = document.getElementById('max-birth');
+            const diagonalsCheckbox = document.getElementById('diagonals-checkbox');
+
+            // --- Game State & Configuration ---
+            let cellSize = 15;
+            const minCellSize = 3;
+            const maxCellSize = 50;
+            let cols, rows;
+            let grid;
+            let isRunning = false;
+            let animationFrameId;
+
+            // --- Speed Control State ---
+            let speed = 10; // Ticks per second
+            let interval = 1000 / speed; // Milliseconds between ticks
+            let lastTickTime = 0;
+
+            // --- Game Rules (with defaults) ---
+            let rules = {
+                minSurvive: 2,
+                maxSurvive: 3,
+                minBirth: 3,
+                maxBirth: 3,
+                useDiagonals: true
+            };
+
+            // --- Functions ---
+
+            /**
+             * Resizes canvas and recalculates grid dimensions.
+             */
+            function resizeAndSetup() {
+                const { width, height } = canvasContainer.getBoundingClientRect();
+                canvas.width = width;
+                canvas.height = height;
+
+                cols = Math.floor(canvas.width / cellSize);
+                rows = Math.floor(canvas.height / cellSize);
+            }
+
+            /**
+             * Creates a 2D array representing the game board.
+             */
+            function createGrid(c, r) {
+                return new Array(r).fill(null)
+                    .map(() => new Array(c).fill(0));
+            }
+
+            /**
+             * Draws the entire grid and cells onto the canvas.
+             */
+            function drawGrid() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid-color').trim();
+                const cellColor = getComputedStyle(document.documentElement).getPropertyValue('--cell-color').trim();
+
+                for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cols; x++) {
+                        if (grid[y][x] === 1) {
+                            ctx.fillStyle = cellColor;
+                            ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                        }
+                        
+                        if (cellSize > 5) {
+                            ctx.strokeStyle = gridColor;
+                            ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                        }
+                    }
+                }
+            }
+
+            /**
+             * Calculates the next state of the grid based on the rules.
+             */
+            function nextGeneration() {
+                const nextGrid = createGrid(cols, rows);
+
+                for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cols; x++) {
+                        const neighbors = countNeighbors(x, y);
+                        const isAlive = grid[y][x] === 1;
+
+                        if (isAlive) {
+                            if (neighbors >= rules.minSurvive && neighbors <= rules.maxSurvive) {
+                                nextGrid[y][x] = 1;
+                            }
+                        } else {
+                            if (neighbors >= rules.minBirth && neighbors <= rules.maxBirth) {
+                                nextGrid[y][x] = 1;
+                            }
+                        }
+                    }
+                }
+                grid = nextGrid;
+            }
+
+            /**
+             * Counts the number of living neighbors for a given cell.
+             */
+            function countNeighbors(x, y) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i === 0 && j === 0) continue;
+                        if (!rules.useDiagonals && Math.abs(i) + Math.abs(j) > 1) continue;
+
+                        const col = (x + j + cols) % cols;
+                        const row = (y + i + rows) % rows;
+                        count += grid[row][col];
+                    }
+                }
+                return count;
+            }
+
+            /**
+             * The main game loop, now controlled by time.
+             */
+            function gameLoop(timestamp) {
+                if (!isRunning) return;
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+                const deltaTime = timestamp - lastTickTime;
+
+                if (deltaTime > interval) {
+                    lastTickTime = timestamp - (deltaTime % interval);
+                    nextGeneration();
+                    drawGrid();
+                }
+            }
+            
+            /**
+             * Fills the grid with random cells.
+             * @param {number} density - The probability (0 to 1) of a cell being alive.
+             */
+            function randomizeGrid(density = 0.3) {
+                 for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cols; x++) {
+                        grid[y][x] = Math.random() < density ? 1 : 0;
+                    }
+                }
+            }
+
+            /**
+             * Updates the rules from the input fields.
+             */
+            function updateRules() {
+                rules.minSurvive = parseInt(minSurviveInput.value, 10);
+                rules.maxSurvive = parseInt(maxSurviveInput.value, 10);
+                rules.minBirth = parseInt(minBirthInput.value, 10);
+                rules.maxBirth = parseInt(maxBirthInput.value, 10);
+                rules.useDiagonals = diagonalsCheckbox.checked;
+            }
+            
+            /**
+             * Handles zooming while preserving the grid's state.
+             */
+            function handleZoom(direction) {
+                const oldCellSize = cellSize;
+                if (direction === 'in') {
+                    cellSize = Math.min(maxCellSize, cellSize + 2);
+                } else {
+                    cellSize = Math.max(minCellSize, cellSize - 2);
+                }
+                
+                if (oldCellSize !== cellSize) {
+                    const oldGrid = grid;
+                    const oldCols = cols;
+                    const oldRows = rows;
+                    
+                    resizeAndSetup(); // Recalculate dimensions and create a new empty grid
+                    const newGrid = createGrid(cols, rows);
+
+                    // Calculate the center offset to keep the pattern centered
+                    const offsetX = Math.round((oldCols - cols) / 2);
+                    const offsetY = Math.round((oldRows - rows) / 2);
+
+                    for (let y = 0; y < rows; y++) {
+                        for (let x = 0; x < cols; x++) {
+                            const oldX = x + offsetX;
+                            const oldY = y + offsetY;
+
+                            if (oldX >= 0 && oldX < oldCols && oldY >= 0 && oldY < oldRows) {
+                                newGrid[y][x] = oldGrid[oldY][oldX];
+                            }
+                        }
+                    }
+                    grid = newGrid;
+                    drawGrid();
+                }
+            }
+
+            // --- Event Listeners ---
+
+            runPauseButton.addEventListener('click', () => {
+                isRunning = !isRunning;
+                if (isRunning) {
+                    runPauseButton.textContent = 'Pause';
+                    runPauseButton.classList.add('running');
+                    updateRules(); 
+                    lastTickTime = performance.now();
+                    animationFrameId = requestAnimationFrame(gameLoop);
+                } else {
+                    runPauseButton.textContent = 'Run';
+                    runPauseButton.classList.remove('running');
+                    cancelAnimationFrame(animationFrameId);
+                }
+            });
+
+            clearButton.addEventListener('click', () => {
+                isRunning = false;
+                runPauseButton.textContent = 'Run';
+                runPauseButton.classList.remove('running');
+                cancelAnimationFrame(animationFrameId);
+                grid = createGrid(cols, rows);
+                drawGrid();
+            });
+
+            randomButton.addEventListener('click', () => {
+                isRunning = false;
+                runPauseButton.textContent = 'Run';
+                runPauseButton.classList.remove('running');
+                cancelAnimationFrame(animationFrameId);
+                randomizeGrid();
+                drawGrid();
+            });
+            
+            speedSlider.addEventListener('input', (e) => {
+                speed = parseInt(e.target.value, 10);
+                speedValueSpan.textContent = speed;
+                interval = 1000 / speed;
+            });
+            
+            zoomInButton.addEventListener('click', () => handleZoom('in'));
+            zoomOutButton.addEventListener('click', () => handleZoom('out'));
+            
+            [minSurviveInput, maxSurviveInput, minBirthInput, maxBirthInput, diagonalsCheckbox].forEach(input => {
+                input.addEventListener('change', updateRules);
+            });
+
+            canvas.addEventListener('click', (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                const col = Math.floor(x / cellSize);
+                const row = Math.floor(y / cellSize);
+
+                if (row >= 0 && row < rows && col >= 0 && col < cols) {
+                    grid[row][col] = grid[row][col] ? 0 : 1;
+                    if (!isRunning) {
+                        drawGrid();
+                    }
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                // This is a simple resize handler. For a more robust solution,
+                // it could also try to preserve the grid like the zoom function.
+                if (isRunning) {
+                   isRunning = false;
+                   runPauseButton.textContent = 'Run';
+                   runPauseButton.classList.remove('running');
+                   cancelAnimationFrame(animationFrameId);
+                }
+                resizeAndSetup();
+                grid = createGrid(cols, rows);
+                drawGrid();
+            });
+
+            // --- Initial Setup ---
+            function initialize() {
+                resizeAndSetup();
+                grid = createGrid(cols, rows);
+                drawGrid();
+                updateRules();
+            }
+
+            initialize();
+        });
+    </script>
+</body>
+</html>
