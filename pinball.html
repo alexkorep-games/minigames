@@ -212,7 +212,7 @@
           reset() {
             this.x = ballInitX;
             this.y = ballInitY;
-            this.vx = (Math.random() * 2 - 1) * 80;
+            this.vx = 0;
             this.vy = 50;
             score = Math.max(0, score - 50);
             updateScore();
@@ -645,7 +645,7 @@
           VH = h;
           H = h * 2;
 
-          ballInitX = W * 0.8;
+          ballInitX = W * 0.85;
           ballInitY = H * 0.74;
 
           canvas.width = Math.floor(W * DPR);
