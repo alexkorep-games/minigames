@@ -55,8 +55,11 @@
       }
       canvas {
         display: block;
-        width: 100vw;
-        height: 100vh;
+  /* Centered fixed-size canvas; JS sets exact size to keep 1:2 portrait ratio */
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
       }
     </style>
   </head>
@@ -66,7 +69,7 @@
       <div class="panel" id="score">Score: 0</div>
       <div class="panel" id="balls">Balls: ∞</div>
     </div>
-    <div id="hint">Tap left/right to flip • Bumpers +100 • Walls +1</div>
+  <div id="hint">Tap left/right to flip • Bumper points scale with size</div>
 
     <script>
       (() => {
@@ -86,7 +89,8 @@
           score = 0;
         let leftDown = false,
           rightDown = false;
-        let particles = [];
+  let particles = [];
+  let scoreDigits = [];
 
         // ---------- Math helpers ----------
         const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -118,6 +122,12 @@
         }
         function addBumper(x, y, r) {
           bumpers.push({ x, y, r, pulse: 0 });
+        }
+
+        // Score for a bumper hit scales with bumper radius; larger bumpers award more
+        function bumperScoreForRadius(r) {
+          // Linear scaling tuned around typical radii; ensure a small minimum
+          return Math.max(10, Math.round(r * 4));
         }
 
         class Ball {
@@ -157,10 +167,12 @@
                 const restitution = 1.15;
                 this.vx -= (1 + restitution) * vn * nx;
                 this.vy -= (1 + restitution) * vn * ny;
-                score += 100;
+                const points = bumperScoreForRadius(b.r);
+                score += points;
                 updateScore();
                 b.pulse = 1;
                 spawnSparks(this.x, this.y, 10);
+                spawnScoreDigits(b.x, b.y - b.r * 0.25, points);
               }
             }
             if (this.y - this.r > H + 100) this.reset();
@@ -285,8 +297,6 @@
               }
               ball.vx = rvx + vfx;
               ball.vy = rvy + vfy;
-              score += 2;
-              updateScore();
               spawnSparks(cx, cy, 6);
             }
           }
@@ -355,8 +365,6 @@
             const vn = ball.vx * nx + ball.vy * ny;
             ball.vx -= (1 + restitution) * vn * nx;
             ball.vy -= (1 + restitution) * vn * ny;
-            score += 1;
-            updateScore();
           }
         }
 
@@ -391,6 +399,49 @@
             ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
             ctx.fillStyle = "#ffd166";
             ctx.fill();
+          }
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+
+        // Floating score label (whole number rises and fades)
+        function spawnScoreDigits(x, y, points) {
+          scoreDigits.push({
+            text: "+" + points,
+            x,
+            y,
+            vx: (Math.random() * 2 - 1) * 30,
+            vy: -140 - Math.random() * 80,
+            life: 0.95,
+            ttl: 0.95,
+          });
+        }
+        function updateScoreDigits(dt) {
+          for (const d of scoreDigits) {
+            d.life -= dt;
+            d.x += d.vx * dt;
+            d.y += d.vy * dt;
+            d.vy += 220 * dt; // slow the rise over time
+            d.vx *= 0.985;
+          }
+          scoreDigits = scoreDigits.filter((d) => d.life > 0);
+        }
+        function drawScoreDigits() {
+          if (!scoreDigits.length) return;
+          ctx.save();
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          for (const d of scoreDigits) {
+            const t = Math.max(0, d.life / d.ttl);
+            const alpha = Math.pow(t, 1.05);
+            const size = 20 + (1 - t) * 8; // slightly larger for whole label
+            ctx.globalAlpha = alpha;
+            ctx.font = `800 ${size}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
+            // soft glow for readability
+            ctx.shadowColor = "rgba(0,0,0,0.6)";
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = "#ffd166";
+            ctx.fillText(d.text ?? "", d.x, d.y);
           }
           ctx.restore();
           ctx.globalAlpha = 1;
@@ -496,8 +547,21 @@
 
         function resize() {
           DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-          W = Math.floor(window.innerWidth);
-          H = Math.floor(window.innerHeight);
+          const vw = Math.floor(window.innerWidth);
+          const vh = Math.floor(window.innerHeight);
+          const targetAspect = 1 / 2; // width:height = 1:2 portrait
+          let w, h;
+          if (vw / vh > targetAspect) {
+            // Viewport is wider than target: limit by height
+            h = vh;
+            w = Math.floor(h * targetAspect);
+          } else {
+            // Viewport is narrower or equal: limit by width
+            w = vw;
+            h = Math.floor(w / targetAspect);
+          }
+          W = w;
+          H = h;
           canvas.width = Math.floor(W * DPR);
           canvas.height = Math.floor(H * DPR);
           canvas.style.width = W + "px";
@@ -560,12 +624,14 @@
         );
 
         function recomputeTouchSides() {
+          const rect = canvas.getBoundingClientRect();
+          const midX = rect.left + rect.width / 2;
           let left = false,
             right = false;
           activeTouches.forEach((t) => {
-            const x = t.clientX ?? t.pageX;
-            if (x < W / 2) left = true;
-            else right = true;
+            const x = (t.clientX ?? t.pageX);
+            if (x < midX) left = true;
+            else if (x > midX) right = true;
           });
           setLeft(left);
           setRight(right);
@@ -574,7 +640,9 @@
         let mouseDown = false;
         canvas.addEventListener("mousedown", (e) => {
           mouseDown = true;
-          if (e.clientX < W / 2) setLeft(true);
+          const rect = canvas.getBoundingClientRect();
+          const midX = rect.left + rect.width / 2;
+          if (e.clientX < midX) setLeft(true);
           else setRight(true);
         });
         window.addEventListener("mouseup", () => {
@@ -584,7 +652,9 @@
         });
         canvas.addEventListener("mousemove", (e) => {
           if (!mouseDown) return;
-          if (e.clientX < W / 2) {
+          const rect = canvas.getBoundingClientRect();
+          const midX = rect.left + rect.width / 2;
+          if (e.clientX < midX) {
             setLeft(true);
             setRight(false);
           } else {
@@ -627,6 +697,7 @@
           for (const f of flippers) f.update(dt);
           ball.integrate(dt);
           updateParticles(dt);
+          updateScoreDigits(dt);
           for (const b of bumpers) b.pulse = Math.max(0, b.pulse - dt * 3);
         }
         function draw() {
@@ -634,6 +705,7 @@
           for (const f of flippers) f.draw();
           ball.draw();
           drawParticles();
+          drawScoreDigits();
         }
 
         // ---------- Start ----------
