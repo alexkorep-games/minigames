@@ -69,7 +69,7 @@
       <div class="panel" id="score">Score: 0</div>
       <div class="panel" id="balls">Balls: ∞</div>
     </div>
-    <div id="hint">Tap left/right to flip • Bumper points scale with size</div>
+    <div id="hint">Tap left/right to flip • Higher bumpers pay up to 1000x</div>
 
     <script>
       (() => {
@@ -92,6 +92,9 @@
           bumpers = [],
           flippers = [],
           score = 0;
+        // Track bumper vertical range for height-based scoring
+        let bumperYMin = Infinity,
+          bumperYMax = -Infinity;
         let leftDown = false,
           rightDown = false;
         let particles = [];
@@ -129,12 +132,30 @@
         }
         function addBumper(x, y, r) {
           bumpers.push({ x, y, r, pulse: 0 });
+          bumperYMin = Math.min(bumperYMin, y);
+          bumperYMax = Math.max(bumperYMax, y);
         }
 
-        // Score for a bumper hit scales with bumper radius; larger bumpers award more
+        // Base score for a bumper hit scales with bumper radius; larger bumpers award more
         function bumperScoreForRadius(r) {
           // Linear scaling tuned around typical radii; ensure a small minimum
           return Math.max(10, Math.round(r * 4));
+        }
+
+        // Additional multiplier based on bumper height: top pays ~1000x of bottom
+        function bumperHeightMultiplier(y) {
+          if (
+            !isFinite(bumperYMin) ||
+            !isFinite(bumperYMax) ||
+            bumperYMax <= bumperYMin
+          )
+            return 1;
+          const t = clamp((y - bumperYMin) / (bumperYMax - bumperYMin), 0, 1); // 0=top, 1=bottom
+          const minMult = 1;
+          const maxMult = 1000; // top vs bottom ratio
+          const ratio = maxMult / minMult;
+          // Exponential mapping gives exact endpoints: t=0 -> max, t=1 -> min
+          return minMult * Math.pow(ratio, 1 - t);
         }
 
         class Ball {
@@ -174,7 +195,9 @@
                 const restitution = 1.15;
                 this.vx -= (1 + restitution) * vn * nx;
                 this.vy -= (1 + restitution) * vn * ny;
-                const points = bumperScoreForRadius(b.r);
+                const base = bumperScoreForRadius(b.r);
+                const mult = bumperHeightMultiplier(b.y);
+                const points = Math.max(1, Math.round(base * mult));
                 score += points;
                 updateScore();
                 b.pulse = 1;
@@ -488,6 +511,10 @@
           flippers = [];
           score = 0;
           updateScore();
+
+          // Reset bumper height range before repopulating
+          bumperYMin = Infinity;
+          bumperYMax = -Infinity;
 
           const mX = W * 0.1,
             mY = H * 0.08;
