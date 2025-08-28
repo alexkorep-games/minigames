@@ -83,6 +83,9 @@
         let VH = 0; // viewport (canvas) height
         let camY = 0; // camera vertical position in world coords
 
+        let ballInitX = 0;
+        let ballInitY = 0;
+
         // world
         let ball,
           walls = [],
@@ -184,8 +187,8 @@
             if (this.y - this.r > H + 100) this.reset();
           }
           reset() {
-            this.x = W * 0.5;
-            this.y = H * 0.12;
+            this.x = ballInitX;
+            this.y = ballInitY;
             this.vx = (Math.random() * 2 - 1) * 80;
             this.vy = 50;
             score = Math.max(0, score - 50);
@@ -493,8 +496,8 @@
           addWall(mX, mY, mX, H * 0.86);
           addWall(W - mX, mY, W - mX, H * 0.86);
 
-          addWall(mX, H * 0.86, W * 0.33, H * 0.88);
-          addWall(W - mX, H * 0.86, W * 0.67, H * 0.88);
+          addWall(mX, H * 0.86, W * 0.23, H * 0.88);
+          addWall(W - mX, H * 0.86, W * 0.77, H * 0.88);
 
           const r = Math.min(W, H);
           const B = Math.max(18, Math.floor(r * 0.025));
@@ -537,14 +540,14 @@
           addBumper(W * 0.24, H * 0.82, B * 0.65);
           addBumper(W * 0.76, H * 0.82, B * 0.65);
 
-          const pivotY = H * 0.9;
+          const pivotY = H * 0.89;
           const L = Math.max(80, Math.min(140, Math.floor(W * 0.18)));
           const thickness = Math.max(8, Math.floor(W * 0.012));
-          flippers.push(new Flipper(true, W * 0.36, pivotY, L, thickness));
-          flippers.push(new Flipper(false, W * 0.64, pivotY, L, thickness));
+          flippers.push(new Flipper(true, W * 0.26, pivotY, L, thickness));
+          flippers.push(new Flipper(false, W * 0.74, pivotY, L, thickness));
 
           const R = Math.max(8, Math.floor(r * 0.018));
-          ball = new Ball(W * 0.5, H * 0.14, R);
+          ball = new Ball(ballInitX, ballInitY, R);
           ball.vx = (Math.random() * 2 - 1) * 60;
           ball.vy = 80;
         }
@@ -614,6 +617,10 @@
           W = w;
           VH = h;
           H = h * 2;
+
+          ballInitX = W * 0.8;
+          ballInitY = H * 0.74;
+
           canvas.width = Math.floor(W * DPR);
           canvas.height = Math.floor(VH * DPR);
           canvas.style.width = W + "px";
