@@ -516,6 +516,27 @@
           addBumper(W * 0.42, H * 0.7, B * 0.75);
           addBumper(W * 0.58, H * 0.7, B * 0.75);
 
+          // Additional bumpers to double total count (spread across field)
+          // Upper corners
+          addBumper(W * 0.2, H * 0.18, B * 0.8);
+          addBumper(W * 0.8, H * 0.18, B * 0.8);
+
+          // Upper-mid wide lanes
+          addBumper(W * 0.18, H * 0.36, B * 0.85);
+          addBumper(W * 0.82, H * 0.36, B * 0.85);
+
+          // Mid-late guides
+          addBumper(W * 0.2, H * 0.62, B * 0.8);
+          addBumper(W * 0.8, H * 0.62, B * 0.8);
+
+          // Pre-flipper funnel
+          addBumper(W * 0.38, H * 0.78, B * 0.7);
+          addBumper(W * 0.62, H * 0.78, B * 0.7);
+
+          // Lower outer deflectors (smaller to avoid flipper interference)
+          addBumper(W * 0.24, H * 0.82, B * 0.65);
+          addBumper(W * 0.76, H * 0.82, B * 0.65);
+
           const pivotY = H * 0.9;
           const L = Math.max(80, Math.min(140, Math.floor(W * 0.18)));
           const thickness = Math.max(8, Math.floor(W * 0.012));
