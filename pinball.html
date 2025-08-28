@@ -423,6 +423,20 @@
           addBumper(W * 0.34, H * 0.4, B);
           addBumper(W * 0.66, H * 0.4, B);
 
+          // Extra bumpers for richer shot selection and ball flow
+          // Upper guides near the top lanes
+          addBumper(W * 0.22, H * 0.24, B * 0.9);
+          addBumper(W * 0.78, H * 0.24, B * 0.9);
+
+          // Mid-field diamond cluster to create cross shots
+          addBumper(W * 0.5, H * 0.52, B * 0.95);
+          addBumper(W * 0.28, H * 0.54, B * 0.82);
+          addBumper(W * 0.72, H * 0.54, B * 0.82);
+
+          // Lower midfield pair to feed the inlanes without blocking flippers
+          addBumper(W * 0.42, H * 0.70, B * 0.75);
+          addBumper(W * 0.58, H * 0.70, B * 0.75);
+
           const pivotY = H * 0.9;
           const L = Math.max(80, Math.min(140, Math.floor(W * 0.18)));
           const thickness = Math.max(8, Math.floor(W * 0.012));
