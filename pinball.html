@@ -78,8 +78,10 @@
 
         // ----- World/state MUST be declared before resize()/setupWorld is called -----
         let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        let W = 0,
-          H = 0;
+        let W = 0, // world width
+          H = 0; // world height (taller than canvas)
+        let VH = 0; // viewport (canvas) height
+        let camY = 0; // camera vertical position in world coords
 
         // world
         let ball,
@@ -531,6 +533,7 @@
           g.addColorStop(0, "#0f1a2e");
           g.addColorStop(1, "#06111f");
           ctx.fillStyle = g;
+          // Background for full world; outer draw() clips to viewport
           ctx.fillRect(0, 0, W, H);
 
           ctx.globalAlpha = 0.08;
@@ -586,14 +589,17 @@
             w = vw;
             h = Math.floor(w / targetAspect);
           }
+          // World is double-height; canvas matches viewport height only
           W = w;
-          H = h;
+          VH = h;
+          H = h * 2;
           canvas.width = Math.floor(W * DPR);
-          canvas.height = Math.floor(H * DPR);
+          canvas.height = Math.floor(VH * DPR);
           canvas.style.width = W + "px";
-          canvas.style.height = H + "px";
+          canvas.style.height = VH + "px";
           ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
           setupWorld();
+          camY = 0;
         }
         window.addEventListener("resize", resize, { passive: true });
 
@@ -725,17 +731,37 @@
           updateParticles(dt);
           updateScoreDigits(dt);
           updateShake(dt);
+          updateCamera(dt);
           for (const b of bumpers) b.pulse = Math.max(0, b.pulse - dt * 3);
+        }
+        function updateCamera(dt) {
+          if (!ball) return;
+          const desired = clamp(
+            Math.round(ball.y - VH * 0.5),
+            0,
+            Math.max(0, H - VH)
+          );
+          // Smooth camera follow
+          const k = Math.min(1, dt * 10);
+          camY += (desired - camY) * k;
         }
         function draw() {
           ctx.save();
           // Apply visual-only board shake to everything drawn on the playfield
           ctx.translate(shake.x | 0, shake.y | 0);
+          // Translate world so that camera offset defines what part is visible
+          ctx.translate(0, -(camY | 0));
+          // Clip to visible viewport after transforms
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, camY, W, VH);
+          ctx.clip();
           drawPlayfield();
           for (const f of flippers) f.draw();
           ball.draw();
           drawParticles();
           drawScoreDigits();
+          ctx.restore();
           ctx.restore();
         }
 
