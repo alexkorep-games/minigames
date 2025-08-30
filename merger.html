@@ -1,396 +1,868 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>Merger Game (Canvas)</title>
-<style>
-  body,html{margin:0;padding:0;height:100%;overflow:hidden;background:#0a0d12;color:#fff;font-family:sans-serif}
-  #sidebar{position:absolute;left:0;top:0;bottom:0;width:240px;background:#10131a;overflow:auto;padding:10px;box-sizing:border-box}
-  #canvas{position:absolute;left:240px;top:0;right:0;bottom:0;background:#0c1118;touch-action:none;}
-  .palette-item{cursor:pointer;margin:5px 0;padding:6px;background:#161c25;border:1px solid #1c2431;border-radius:8px;display:flex;align-items:center;gap:6px}
-  .pi-emoji{width:20px;text-align:center}
-  /* sidebar controls */
-  .controls{position:sticky;top:0;z-index:5;background:#10131a;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #1c2431}
-  .controls .row{display:flex;align-items:center;gap:8px;justify-content:space-between}
-  .btn{background:#1b2330;border:1px solid #2a3646;border-radius:8px;color:#cfe8ff;padding:6px 10px;cursor:pointer}
-  .btn:hover{background:#223042}
-</style>
-</head>
-<body>
-<div id="sidebar"></div>
-<canvas id="canvas"></canvas>
-<script>
-// --- Full rules & mobile-friendly canvas merger ---
-const gameData = {
-  primitives: ["energy","material","symbol","human"],
-  recipes: { 
-    "adder": ["logic", "circuit"], "address": ["memory", "number"], "algorithm": ["logic", "rules"], "alu": ["register", "adder"], "annotation": ["human", "rules"], "assertions": ["rules", "logic"], "bit": ["signal", "threshold"], "branch": ["repo", "commit"], "build": ["merge request", "tests"], "casing": ["material", "tool"], "cipher": ["key", "lock"], "circuit": ["wire", "tool"], "clock": ["oscillator", "divider"], "code": ["text", "logic"], "commit": ["repo", "diff"], "compile": ["algorithm", "language"], "control unit": ["logic", "microcode"], "cpu": ["alu", "control unit"], "data": ["signal", "schema"], "database": ["table", "index"], "deployment": ["build", "script"], "diff": ["file", "file"], "directory": ["file", "file"], "divider": ["circuit", "rules"], "encryption": ["cipher", "key"], "ensemble": ["model", "model"], "file": ["data", "metadata"], "filesystem": ["directory", "map"], "flip-flop": ["bit", "clock"], "font": ["rules", "text"], "function": ["syntax", "logic"], "hardware": ["circuit", "casing"], "index": ["keys", "pointer"], "inference": ["human", "rules"], "init": ["tool", "rules"], "interpreter": ["language", "algorithm"], "key": ["randomness", "length"], "keys": ["schema", "number"], "keyspace": ["rules", "number"], "labels": ["data", "annotation"], "length": ["number", "rules"], "letter": ["symbol", "font"], "library": ["function", "function"], "link": ["wire", "wire"], "linked list": ["pointer", "pointer"], "lock": ["algorithm", "keyspace"], "logic": ["rules", "symbol"], "map": ["keys", "values"], "memory": ["storage", "circuit"], "merge request": ["branch", "branch"], "metadata": ["schema", "rules"], "microcode": ["rules", "table"], "metal": ["material", "energy"], "model": ["training set", "algorithm"], "nibble": ["bit", "bit"], "noise": ["energy", "material"], "number": ["rules", "symbol"], "offset": ["number", "rules"], "oscillator": ["circuit", "energy"], "os": ["process", "scheduler"], "packet": ["protocol", "address"], "placeholders": ["symbol", "rules"], "pointer": ["byte", "address"], "prediction": ["model", "data"], "process": ["program", "resources"], "program": ["code", "compile"], "protocol": ["link", "rules"], "queue": ["data", "rules"], "query": ["text", "database"], "randomness": ["oscillator", "noise"], "register": ["flip-flop", "flip-flop"], "repo": ["directory", "init"], "report": ["result set", "template"], "resources": ["memory", "cpu"], "result set": ["query", "database"], "row": ["data", "schema"], "rules": ["human", "symbol"], "schema": ["rules", "text"], "scheduler": ["clock", "queue"], "script": ["text", "interpreter"], "secure server": ["tls", "server"], "server": ["os", "hardware"], "signal": ["energy", "wire"], "storage": ["material", "circuit"], "stream": ["packet", "packet"], "syntax": ["token", "rules"], "table": ["row", "row"], "template": ["text", "placeholders"], "tests": ["assertions", "code"], "text": ["symbol", "rules"], "threshold": ["rules", "circuit"], "tls": ["encryption", "protocol"], "token": ["letter", "letter"], "training set": ["data", "labels"], "wire": ["metal", "tool"], "values": ["data"], "byte": ["nibble", "nibble"], "link": ["wire", "wire"], "packet": ["protocol", "address"], "library": ["function", "function"], "function": ["syntax", "logic"], "pointer": ["byte", "address"], "linked list": ["pointer", "pointer"], "directory": ["file", "file"], "filesystem": ["directory", "map"], "os": ["process", "scheduler"], "server": ["os", "hardware"], "repo": ["directory", "init"], "branch": ["repo", "commit"], "merge request": ["branch", "branch"], "build": ["merge request", "tests"], "deployment": ["build", "script"], "database": ["table", "index"], "result set": ["query", "database"], "report": ["result set", "template"], "cipher": ["key", "lock"], "encryption": ["cipher", "key"], "tls": ["encryption", "protocol"], "secure server": ["tls", "server"], "model": ["training set", "algorithm"], "prediction": ["model", "data"], "ensemble": ["model", "model"], "protocol": ["link", "rules"] 
-  }
-};
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <title>Merger Game (Canvas)</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0d12;
+        color: #fff;
+        font-family: sans-serif;
+      }
+      #sidebar {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 240px;
+        background: #10131a;
+        overflow: auto;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+      #canvas {
+        position: absolute;
+        left: 240px;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        background: #0c1118;
+        touch-action: none;
+      }
+      .palette-item {
+        cursor: pointer;
+        margin: 5px 0;
+        padding: 6px;
+        background: #161c25;
+        border: 1px solid #1c2431;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .pi-emoji {
+        width: 20px;
+        text-align: center;
+      }
+      /* sidebar controls */
+      .controls {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: #10131a;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #1c2431;
+      }
+      .controls .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: space-between;
+      }
+      .btn {
+        background: #1b2330;
+        border: 1px solid #2a3646;
+        border-radius: 8px;
+        color: #cfe8ff;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: #223042;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar"></div>
+    <canvas id="canvas"></canvas>
+    <script>
+      // --- Full rules & mobile-friendly canvas merger ---
+      const gameData = {
+        primitives: ["energy", "material", "symbol", "human"],
+        recipes: {
+          adder: ["logic", "circuit"],
+          address: ["memory", "number"],
+          algorithm: ["logic", "rules"],
+          alu: ["register", "adder"],
+          annotation: ["human", "rules"],
+          assertions: ["rules", "logic"],
+          bit: ["signal", "threshold"],
+          branch: ["repo", "commit"],
+          build: ["merge request", "tests"],
+          casing: ["material", "tool"],
+          cipher: ["key", "lock"],
+          circuit: ["wire", "tool"],
+          clock: ["oscillator", "divider"],
+          code: ["text", "logic"],
+          commit: ["repo", "diff"],
+          compile: ["algorithm", "language"],
+          "control unit": ["logic", "microcode"],
+          cpu: ["alu", "control unit"],
+          data: ["signal", "schema"],
+          database: ["table", "index"],
+          deployment: ["build", "script"],
+          diff: ["file", "file"],
+          directory: ["file", "file"],
+          divider: ["circuit", "rules"],
+          encryption: ["cipher", "key"],
+          ensemble: ["model", "model"],
+          file: ["data", "metadata"],
+          filesystem: ["directory", "map"],
+          "flip-flop": ["bit", "clock"],
+          font: ["rules", "text"],
+          function: ["syntax", "logic"],
+          hardware: ["circuit", "casing"],
+          index: ["keys", "pointer"],
+          inference: ["human", "rules"],
+          init: ["tool", "rules"],
+          interpreter: ["language", "algorithm"],
+          key: ["randomness", "length"],
+          keys: ["schema", "number"],
+          keyspace: ["rules", "number"],
+          labels: ["data", "annotation"],
+          length: ["number", "rules"],
+          letter: ["symbol", "font"],
+          library: ["function", "function"],
+          link: ["wire", "wire"],
+          "linked list": ["pointer", "pointer"],
+          lock: ["algorithm", "keyspace"],
+          logic: ["rules", "symbol"],
+          map: ["keys", "values"],
+          memory: ["storage", "circuit"],
+          "merge request": ["branch", "branch"],
+          metadata: ["schema", "rules"],
+          microcode: ["rules", "table"],
+          metal: ["material", "energy"],
+          model: ["training set", "algorithm"],
+          nibble: ["bit", "bit"],
+          noise: ["energy", "material"],
+          number: ["rules", "symbol"],
+          offset: ["number", "rules"],
+          oscillator: ["circuit", "energy"],
+          os: ["process", "scheduler"],
+          packet: ["protocol", "address"],
+          placeholders: ["symbol", "rules"],
+          pointer: ["byte", "address"],
+          prediction: ["model", "data"],
+          process: ["program", "resources"],
+          program: ["code", "compile"],
+          protocol: ["link", "rules"],
+          queue: ["data", "rules"],
+          query: ["text", "database"],
+          randomness: ["oscillator", "noise"],
+          register: ["flip-flop", "flip-flop"],
+          repo: ["directory", "init"],
+          report: ["result set", "template"],
+          resources: ["memory", "cpu"],
+          "result set": ["query", "database"],
+          row: ["data", "schema"],
+          rules: ["human", "symbol"],
+          schema: ["rules", "text"],
+          scheduler: ["clock", "queue"],
+          script: ["text", "interpreter"],
+          "secure server": ["tls", "server"],
+          server: ["os", "hardware"],
+          signal: ["energy", "wire"],
+          storage: ["material", "circuit"],
+          stream: ["packet", "packet"],
+          syntax: ["token", "rules"],
+          table: ["row", "row"],
+          template: ["text", "placeholders"],
+          tests: ["assertions", "code"],
+          text: ["symbol", "rules"],
+          threshold: ["rules", "circuit"],
+          tls: ["encryption", "protocol"],
+          token: ["letter", "letter"],
+          "training set": ["data", "labels"],
+          wire: ["metal", "tool"],
+          values: ["data"],
+          byte: ["nibble", "nibble"],
+          link: ["wire", "wire"],
+          packet: ["protocol", "address"],
+          library: ["function", "function"],
+          function: ["syntax", "logic"],
+          pointer: ["byte", "address"],
+          "linked list": ["pointer", "pointer"],
+          directory: ["file", "file"],
+          filesystem: ["directory", "map"],
+          os: ["process", "scheduler"],
+          server: ["os", "hardware"],
+          repo: ["directory", "init"],
+          branch: ["repo", "commit"],
+          "merge request": ["branch", "branch"],
+          build: ["merge request", "tests"],
+          deployment: ["build", "script"],
+          database: ["table", "index"],
+          "result set": ["query", "database"],
+          report: ["result set", "template"],
+          cipher: ["key", "lock"],
+          encryption: ["cipher", "key"],
+          tls: ["encryption", "protocol"],
+          "secure server": ["tls", "server"],
+          model: ["training set", "algorithm"],
+          prediction: ["model", "data"],
+          ensemble: ["model", "model"],
+          protocol: ["link", "rules"],
+        },
+      };
 
-// icon set
-const iconMap = Object.fromEntries(Object.entries({
-  energy:"⚡", material:"🧱", symbol:"🔣", human:"🧑",
-  logic:"🧠", rules:"📏", circuit:"🧩", wire:"🧵", tool:"🛠️",
-  adder:"➕", address:"📮", algorithm:"📐", alu:"🧮", annotation:"🏷️",
-  assertions:"✅", bit:"⚙️", branch:"🌿", build:"🏗️", casing:"🧰",
-  cipher:"🗝️", clock:"⏰", code:"🧾", commit:"🧷", compile:"🧯",
-  "control unit":"🎛️", cpu:"🖥️", data:"💽", database:"🗄️", deployment:"🚀",
-  diff:"🔀", directory:"📁", divider:"➗", encryption:"🔐", ensemble:"👥",
-  file:"📄", filesystem:"🗂️", "flip-flop":"🔁", font:"🔤", function:"ƒ",
-  hardware:"💾", index:"🔢", inference:"🧐", init:"✨", interpreter:"🗣️",
-  key:"🔑", keys:"🗝️", keyspace:"🌌", labels:"🏷️", length:"📏",
-  letter:"🔡", library:"📚", link:"🔗", "linked list":"🧶", lock:"🔒",
-  map:"🗺️", memory:"🧠", "merge request":"🔃", metadata:"🧾", microcode:"🧬",
-  metal:"🪙", model:"🤖", nibble:"🧊", noise:"📢", number:"#️⃣",
-  offset:"📐", oscillator:"📳", os:"🧩", packet:"📦", placeholders:"🧷",
-  pointer:"🧭", prediction:"🔮", process:"⚙️", program:"📟", protocol:"📡",
-  queue:"🧵", query:"❓", randomness:"🎲", register:"🗃️", repo:"🗃️",
-  report:"📑", resources:"🧰", "result set":"🧮", row:"▤", schema:"🧩",
-  scheduler:"🗓️", script:"📜", "secure server":"🛡️", server:"🖥️",
-  signal:"📶", storage:"💽", stream:"🌊", syntax:"✍️", table:"📊",
-  template:"🧰", tests:"🧪", text:"📝", threshold:"🚧", tls:"🧷",
-  token:"🔖", "training set":"🎓", values:"💡", byte:"🧊"
-}).map(([k,v])=>[k.toLowerCase(),v]));
-const iconFor = n => iconMap[n.toLowerCase()] || "🔹";
+      // icon set
+      const iconMap = Object.fromEntries(
+        Object.entries({
+          energy: "⚡",
+          material: "🧱",
+          symbol: "🔣",
+          human: "🧑",
+          logic: "🧠",
+          rules: "📏",
+          circuit: "🧩",
+          wire: "🧵",
+          tool: "🛠️",
+          adder: "➕",
+          address: "📮",
+          algorithm: "📐",
+          alu: "🧮",
+          annotation: "🏷️",
+          assertions: "✅",
+          bit: "⚙️",
+          branch: "🌿",
+          build: "🏗️",
+          casing: "🧰",
+          cipher: "🗝️",
+          clock: "⏰",
+          code: "🧾",
+          commit: "🧷",
+          compile: "🧯",
+          "control unit": "🎛️",
+          cpu: "🖥️",
+          data: "💽",
+          database: "🗄️",
+          deployment: "🚀",
+          diff: "🔀",
+          directory: "📁",
+          divider: "➗",
+          encryption: "🔐",
+          ensemble: "👥",
+          file: "📄",
+          filesystem: "🗂️",
+          "flip-flop": "🔁",
+          font: "🔤",
+          function: "ƒ",
+          hardware: "💾",
+          index: "🔢",
+          inference: "🧐",
+          init: "✨",
+          interpreter: "🗣️",
+          key: "🔑",
+          keys: "🗝️",
+          keyspace: "🌌",
+          labels: "🏷️",
+          length: "📏",
+          letter: "🔡",
+          library: "📚",
+          link: "🔗",
+          "linked list": "🧶",
+          lock: "🔒",
+          map: "🗺️",
+          memory: "🧠",
+          "merge request": "🔃",
+          metadata: "🧾",
+          microcode: "🧬",
+          metal: "🪙",
+          model: "🤖",
+          nibble: "🧊",
+          noise: "📢",
+          number: "#️⃣",
+          offset: "📐",
+          oscillator: "📳",
+          os: "🧩",
+          packet: "📦",
+          placeholders: "🧷",
+          pointer: "🧭",
+          prediction: "🔮",
+          process: "⚙️",
+          program: "📟",
+          protocol: "📡",
+          queue: "🧵",
+          query: "❓",
+          randomness: "🎲",
+          register: "🗃️",
+          repo: "🗃️",
+          report: "📑",
+          resources: "🧰",
+          "result set": "🧮",
+          row: "▤",
+          schema: "🧩",
+          scheduler: "🗓️",
+          script: "📜",
+          "secure server": "🛡️",
+          server: "🖥️",
+          signal: "📶",
+          storage: "💽",
+          stream: "🌊",
+          syntax: "✍️",
+          table: "📊",
+          template: "🧰",
+          tests: "🧪",
+          text: "📝",
+          threshold: "🚧",
+          tls: "🧷",
+          token: "🔖",
+          "training set": "🎓",
+          values: "💡",
+          byte: "🧊",
+        }).map(([k, v]) => [k.toLowerCase(), v])
+      );
+      const iconFor = (n) => iconMap[n.toLowerCase()] || "🔹";
 
-// helpers
-const norm = s => s.trim().toLowerCase();
-const pairKey = (a,b)=>{a=norm(a);b=norm(b);return a<b?`${a}||${b}`:`${b}||${a}`};
+      // helpers
+      const norm = (s) => s.trim().toLowerCase();
+      const pairKey = (a, b) => {
+        a = norm(a);
+        b = norm(b);
+        return a < b ? `${a}||${b}` : `${b}||${a}`;
+      };
 
-// build recipe map (pair -> [results]) & universe
-const recipeByPair = new Map();
-const allItems = new Set(gameData.primitives.map(norm));
-for (const [result, inputs] of Object.entries(gameData.recipes)){
-  const res = norm(result);
-  const ins = inputs.map(norm);
-  ins.forEach(i=>allItems.add(i)); allItems.add(res);
-  if (ins.length===2){
-    const key = pairKey(ins[0], ins[1]);
-    const arr = recipeByPair.get(key) || [];
-    if (!arr.includes(res)) arr.push(res);
-    recipeByPair.set(key, arr);
-  }
-}
+      // build recipe map (pair -> [results]) & universe
+      const recipeByPair = new Map();
+      const allItems = new Set(gameData.primitives.map(norm));
+      for (const [result, inputs] of Object.entries(gameData.recipes)) {
+        const res = norm(result);
+        const ins = inputs.map(norm);
+        ins.forEach((i) => allItems.add(i));
+        allItems.add(res);
+        if (ins.length === 2) {
+          const key = pairKey(ins[0], ins[1]);
+          const arr = recipeByPair.get(key) || [];
+          if (!arr.includes(res)) arr.push(res);
+          recipeByPair.set(key, arr);
+        }
+      }
 
-// state
-let discovered = new Set(gameData.primitives.map(norm));
-let items = []; // {id,name,x,y}
-let nextId = 1;
-let isLoading = false;
-const SAVE_KEY = 'merger.save.v1';
+      // state
+      let discovered = new Set(gameData.primitives.map(norm));
+      let items = []; // {id,name,x,y}
+      let nextId = 1;
+      let isLoading = false;
+      const SAVE_KEY = "merger.save.v1";
 
-// DOM
-// declare drag state BEFORE any draw() is ever called
-let dragItem = null, dragDX = 0, dragDY = 0, dragging = false;
+      // DOM
+      // declare drag state BEFORE any draw() is ever called
+      let dragItem = null,
+        dragDX = 0,
+        dragDY = 0,
+        dragging = false;
 
-const sidebar = document.getElementById('sidebar');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-// --- Trash bin (bottom-right) ---
-const TRASH_SIZE = 96, TRASH_MARGIN = 16;
-// layout constants
-const ITEM_RADIUS = 28;
-const SAFE_MARGIN = 30;
-let overTrash = false;
-function trashRect(){
-  return { x: canvas.width - TRASH_SIZE - TRASH_MARGIN,
-           y: canvas.height - TRASH_SIZE - TRASH_MARGIN,
-           w: TRASH_SIZE, h: TRASH_SIZE };
-}
-function isPointInTrash(px, py){
-  const r = trashRect();
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-}
-function drawTrash(highlight){
-  const r = trashRect();
-  ctx.save();
-  ctx.globalAlpha = 0.98;
-  ctx.fillStyle = highlight ? '#2a0f16' : '#121820';
-  ctx.strokeStyle = highlight ? '#ff6161' : '#2a3646';
-  ctx.lineWidth = 2;
-  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill(); ctx.stroke(); }
-  else { ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeRect(r.x, r.y, r.w, r.h); }
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = '26px system-ui, sans-serif'; ctx.fillText('🗑️', r.x + r.w/2, r.y + r.h/2 - 8);
-  ctx.font = '12px system-ui, sans-serif'; ctx.fillText('Trash', r.x + r.w/2, r.y + r.h - 16);
-  ctx.restore();
-}
+      const sidebar = document.getElementById("sidebar");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      // --- Trash bin (bottom-right) ---
+      const TRASH_SIZE = 96,
+        TRASH_MARGIN = 16;
+      // layout constants
+      const ITEM_RADIUS = 28;
+      const SAFE_MARGIN = 30;
+      let overTrash = false;
+      function trashRect() {
+        return {
+          x: canvas.width - TRASH_SIZE - TRASH_MARGIN,
+          y: canvas.height - TRASH_SIZE - TRASH_MARGIN,
+          w: TRASH_SIZE,
+          h: TRASH_SIZE,
+        };
+      }
+      function isPointInTrash(px, py) {
+        const r = trashRect();
+        return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+      }
+      function drawTrash(highlight) {
+        const r = trashRect();
+        ctx.save();
+        ctx.globalAlpha = 0.98;
+        ctx.fillStyle = highlight ? "#2a0f16" : "#121820";
+        ctx.strokeStyle = highlight ? "#ff6161" : "#2a3646";
+        ctx.lineWidth = 2;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(r.x, r.y, r.w, r.h, 12);
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "26px system-ui, sans-serif";
+        ctx.fillText("🗑️", r.x + r.w / 2, r.y + r.h / 2 - 8);
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillText("Trash", r.x + r.w / 2, r.y + r.h - 16);
+        ctx.restore();
+      }
 
-// progress HUD (top-left)
-function drawProgress(){
-  const total = allItems.size;
-  const opened = discovered.size;
-  const text = `Discovered ${opened} / ${total}`;
-  const x = 12, y = 10, h = 28, pad = 10;
-  ctx.save();
-  ctx.font = '14px system-ui, sans-serif';
-  const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = '#10131a';
-  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill(); }
-  else { ctx.fillRect(x, y, w, h); }
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#cfe8ff';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + pad, y + h/2 + 0.5);
-  ctx.restore();
-}
+      // progress HUD (top-left)
+      function drawProgress() {
+        const total = allItems.size;
+        const opened = discovered.size;
+        const text = `Discovered ${opened} / ${total}`;
+        const x = 12,
+          y = 10,
+          h = 28,
+          pad = 10;
+        ctx.save();
+        ctx.font = "14px system-ui, sans-serif";
+        const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = "#10131a";
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, 8);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, y, w, h);
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "#cfe8ff";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, x + pad, y + h / 2 + 0.5);
+        ctx.restore();
+      }
 
-// persistence
-function saveGame(){
-  if (isLoading) return;
-  try{
-    const payload = {
-      v:1,
-      discovered:[...discovered],
-      items: items.map(({name,x,y})=>({n:name,x,y})),
-      nextId
-    };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
-  }catch(_){/* ignore quota/errors */}
-}
+      // persistence
+      function saveGame() {
+        if (isLoading) return;
+        try {
+          const payload = {
+            v: 1,
+            discovered: [...discovered],
+            items: items.map(({ name, x, y }) => ({ n: name, x, y })),
+            nextId,
+          };
+          localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+        } catch (_) {
+          /* ignore quota/errors */
+        }
+      }
 
-function loadGame(){
-  try{
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    if (!data || data.v!==1) return false;
-    const valid = n => allItems.has(norm(n));
-    const disc = new Set((data.discovered||[]).map(norm).filter(valid));
-    // always keep primitives
-    gameData.primitives.forEach(p=>disc.add(norm(p)));
-    discovered = disc;
-    // rebuild items
-    items = []; nextId = 1; isLoading = true;
-    (data.items||[]).forEach(s=>{
-      if (!s || !valid(s.n)) return;
-      spawnItem(s.n, Number(s.x), Number(s.y));
-    });
-    nextId = Math.max(nextId, Number(data.nextId)||nextId);
-    isLoading = false;
-    return true;
-  }catch(_){ return false; }
-}
+      function loadGame() {
+        try {
+          const raw = localStorage.getItem(SAVE_KEY);
+          if (!raw) return false;
+          const data = JSON.parse(raw);
+          if (!data || data.v !== 1) return false;
+          const valid = (n) => allItems.has(norm(n));
+          const disc = new Set((data.discovered || []).map(norm).filter(valid));
+          // always keep primitives
+          gameData.primitives.forEach((p) => disc.add(norm(p)));
+          discovered = disc;
+          // rebuild items
+          items = [];
+          nextId = 1;
+          isLoading = true;
+          (data.items || []).forEach((s) => {
+            if (!s || !valid(s.n)) return;
+            spawnItem(s.n, Number(s.x), Number(s.y));
+          });
+          nextId = Math.max(nextId, Number(data.nextId) || nextId);
+          isLoading = false;
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
 
-function resize(){
-  canvas.width = window.innerWidth - 240;
-  canvas.height = window.innerHeight;
-  // clamp all items into view on resize
-  const w = canvas.width, h = canvas.height;
-  items.forEach(it=>{
-    it.x = Math.max(SAFE_MARGIN, Math.min(w - SAFE_MARGIN, it.x));
-    it.y = Math.max(SAFE_MARGIN, Math.min(h - SAFE_MARGIN, it.y));
-  });
-  draw();
-}
-window.addEventListener('resize', resize, {passive:true});
-resize();
-
-// sidebar rendering
-function paletteItem(name){
-  const div = document.createElement('div');
-  div.className = 'palette-item';
-  div.innerHTML = `<span class="pi-emoji">${iconFor(name)}</span><span>${name}</span>`;
-  // spawn at center on click
-  div.addEventListener('click', ()=> spawnItem(name, canvas.width/2, canvas.height/2));
-  // optional: drag-from-palette (spawn under pointer)
-  div.addEventListener('pointerdown', (e)=>{
-    const r = canvas.getBoundingClientRect();
-    const x = Math.max(30, Math.min(r.width-30, e.clientX - r.left));
-    const y = Math.max(30, Math.min(r.height-30, e.clientY - r.top));
-    const el = spawnItem(name, x, y);
-    // bring to front and begin drag immediately
-    startDrag(el, e, true);
-  });
-  return div;
-}
-function renderSidebar(){
-  sidebar.innerHTML = '';
-  // controls at top
-  const controls = document.createElement('div');
-  controls.className = 'controls';
-  const row = document.createElement('div');
-  row.className = 'row';
-  const title = document.createElement('div');
-  title.textContent = 'Palette';
-  title.style.opacity = '0.8';
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn';
-  resetBtn.textContent = 'Start Over';
-  resetBtn.addEventListener('click', ()=>{
-    const ok = confirm('Start over? This will erase your discovered items and board.');
-    if (!ok) return;
-    try{ localStorage.removeItem(SAVE_KEY); }catch(_){}
-    newGame();
-  });
-  row.appendChild(title);
-  row.appendChild(resetBtn);
-  controls.appendChild(row);
-  sidebar.appendChild(controls);
-  [...discovered].sort().forEach(n=> sidebar.appendChild(paletteItem(n)) );
-}
-
-// items
-function spawnItem(name,x,y){
-  const w = canvas.width, h = canvas.height;
-  const obj = { id: nextId++, name: norm(name),
-    x: Math.max(SAFE_MARGIN, Math.min(w - SAFE_MARGIN, (x ?? w/2))),
-    y: Math.max(SAFE_MARGIN, Math.min(h - SAFE_MARGIN, (y ?? h/2))) };
-  items.push(obj);
-  draw();
-  saveGame();
-  return obj;
-}
-
-function removeItem(id){ items = items.filter(it=>it.id!==id); saveGame(); }
-
-// drawing (dragged item always drawn on top)
-
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = '#0c1118'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  // subtle grid
-  ctx.save(); ctx.globalAlpha = 0.18; ctx.strokeStyle = '#15202c';
-  for(let x=40;x<canvas.width;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
-  for(let y=40;y<canvas.height;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
-  ctx.restore();
-
-  const R = ITEM_RADIUS;
-  const drawOne = (it, highlight=false)=>{
-    ctx.beginPath(); ctx.arc(it.x, it.y, R, 0, Math.PI*2);
-    ctx.fillStyle = '#161c25'; ctx.fill(); ctx.strokeStyle = '#3a4a5a'; ctx.stroke();
-    if (highlight){ ctx.beginPath(); ctx.arc(it.x, it.y, R+4, 0, Math.PI*2); ctx.strokeStyle = '#5fb4ff'; ctx.stroke(); }
-    ctx.fillStyle = '#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.font = '20px system-ui, sans-serif'; ctx.fillText(iconFor(it.name), it.x, it.y-8);
-    ctx.font = '12px system-ui, sans-serif'; ctx.fillText(it.name, it.x, it.y+14);
-  };
-
-  // draw non-dragged first
-  items.forEach(it=>{ if (!dragItem || it.id!==dragItem.id) drawOne(it,false); });
-  // dragged last on top
-  if (dragItem) { drawOne(dragItem,true); if (overTrash){ ctx.beginPath(); ctx.arc(dragItem.x, dragItem.y, R+6, 0, Math.PI*2); ctx.strokeStyle = '#ff6161'; ctx.lineWidth=2; ctx.stroke(); ctx.lineWidth=1; } }
-  // draw trash first so items/dragged are visually on top
-drawTrash(overTrash);
-  // draw progress HUD on top
-  drawProgress();
-}
-
-// hit-test (topmost)
-function pick(x,y){
-  const R = ITEM_RADIUS;
-  for (let i=items.length-1;i>=0;i--){
-    const it = items[i];
-    if (Math.hypot(it.x-x, it.y-y) <= R) return it;
-  }
-  return null;
-}
-
-// drag logic with z-order bring-to-front
-function startDrag(it, e, spawned=false){
-  dragItem = it; dragging = true;
-  // move to top (end of array) for z-order
-  const idx = items.findIndex(x=>x.id===it.id);
-  if (idx>=0){ items.splice(idx,1); items.push(it); }
-  const r = canvas.getBoundingClientRect();
-  const cx = e.clientX - r.left, cy = e.clientY - r.top;
-  dragDX = cx - it.x; dragDY = cy - it.y;
-  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
-  draw();
-}
-
-canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault();
-  const r = canvas.getBoundingClientRect();
-  const x = e.clientX - r.left, y = e.clientY - r.top;
-  const it = pick(x,y);
-  if (it) startDrag(it, e);
-});
-
-canvas.addEventListener('pointermove', (e)=>{
-  if (!dragging || !dragItem) return;
-  const r = canvas.getBoundingClientRect();
-  dragItem.x = Math.max(SAFE_MARGIN, Math.min(r.width - SAFE_MARGIN, e.clientX - r.left - dragDX));
-  dragItem.y = Math.max(SAFE_MARGIN, Math.min(r.height - SAFE_MARGIN, e.clientY - r.top - dragDY));
-  overTrash = isPointInTrash(dragItem.x, dragItem.y);
-  draw();
-});
-
-canvas.addEventListener('pointerup', (e)=>{
-  if (!dragging || !dragItem) return;
-  const dropped = dragItem; dragging=false; dragItem=null;
-  // trash check
-  if (isPointInTrash(dropped.x, dropped.y)) { removeItem(dropped.id); draw(); return; }
-  // check merge with nearest overlapping item
-  const R = 30;
-  for (let i=items.length-1;i>=0;i--){
-    const it = items[i];
-    if (it.id===dropped.id) continue;
-    if (Math.hypot(it.x - dropped.x, it.y - dropped.y) <= R){
-      const key = pairKey(it.name, dropped.name);
-      const results = recipeByPair.get(key);
-      if (results && results.length){
-        // remove sources
-        items = items.filter(x=>x.id!==it.id && x.id!==dropped.id);
-        // spawn all results slightly fanned
-        const cx = (it.x + dropped.x)/2, cy = (it.y + dropped.y)/2;
-        const spread = 24, step = (Math.PI*2)/(results.length||1);
-        results.forEach((res, idx)=>{
-          const nx = cx + Math.cos(idx*step)*spread;
-          const ny = cy + Math.sin(idx*step)*spread;
-          spawnItem(res, nx, ny);
-          discovered.add(norm(res));
+      function resize() {
+        canvas.width = window.innerWidth - 240;
+        canvas.height = window.innerHeight;
+        // clamp all items into view on resize
+        const w = canvas.width,
+          h = canvas.height;
+        items.forEach((it) => {
+          it.x = Math.max(SAFE_MARGIN, Math.min(w - SAFE_MARGIN, it.x));
+          it.y = Math.max(SAFE_MARGIN, Math.min(h - SAFE_MARGIN, it.y));
         });
-        renderSidebar();
+        draw();
+      }
+      window.addEventListener("resize", resize, { passive: true });
+      resize();
+
+      // sidebar rendering
+      function paletteItem(name) {
+        const div = document.createElement("div");
+        div.className = "palette-item";
+        div.innerHTML = `<span class="pi-emoji">${iconFor(
+          name
+        )}</span><span>${name}</span>`;
+        // drag-from-palette (spawn under pointer); prevent duplicate click on mobile
+        div.addEventListener(
+          "pointerdown",
+          (e) => {
+            try {
+              e.preventDefault();
+            } catch (_) {}
+            const r = canvas.getBoundingClientRect();
+            const x = Math.max(30, Math.min(r.width - 30, e.clientX - r.left));
+            const y = Math.max(30, Math.min(r.height - 30, e.clientY - r.top));
+            const el = spawnItem(name, x, y);
+            // bring to front and begin drag immediately
+            startDrag(el, e, true);
+          },
+          { passive: false }
+        );
+        return div;
+      }
+      function renderSidebar() {
+        sidebar.innerHTML = "";
+        // controls at top
+        const controls = document.createElement("div");
+        controls.className = "controls";
+        const row = document.createElement("div");
+        row.className = "row";
+        const title = document.createElement("div");
+        title.textContent = "Palette";
+        title.style.opacity = "0.8";
+        const resetBtn = document.createElement("button");
+        resetBtn.className = "btn";
+        resetBtn.textContent = "Start Over";
+        resetBtn.addEventListener("click", () => {
+          const ok = confirm(
+            "Start over? This will erase your discovered items and board."
+          );
+          if (!ok) return;
+          try {
+            localStorage.removeItem(SAVE_KEY);
+          } catch (_) {}
+          newGame();
+        });
+        const clearBtn = document.createElement("button");
+        clearBtn.className = "btn";
+        clearBtn.textContent = "Clear Field";
+        clearBtn.title =
+          "Remove all items from the board (keep discovered palette)";
+        clearBtn.addEventListener("click", () => {
+          items = [];
+          overTrash = false;
+          draw();
+          saveGame();
+        });
+        row.appendChild(title);
+        row.appendChild(clearBtn);
+        row.appendChild(resetBtn);
+        controls.appendChild(row);
+        sidebar.appendChild(controls);
+        [...discovered]
+          .sort()
+          .forEach((n) => sidebar.appendChild(paletteItem(n)));
+      }
+
+      // items
+      function spawnItem(name, x, y) {
+        const w = canvas.width,
+          h = canvas.height;
+        const obj = {
+          id: nextId++,
+          name: norm(name),
+          x: Math.max(SAFE_MARGIN, Math.min(w - SAFE_MARGIN, x ?? w / 2)),
+          y: Math.max(SAFE_MARGIN, Math.min(h - SAFE_MARGIN, y ?? h / 2)),
+        };
+        items.push(obj);
+        draw();
+        saveGame();
+        return obj;
+      }
+
+      function removeItem(id) {
+        items = items.filter((it) => it.id !== id);
         saveGame();
       }
-      break;
-    }
-  }
-  draw();
-  saveGame();
-});
 
-// init
-renderSidebar();
-// smart initial placement (never off-screen)
-function spawnInitialPrimitives(){
-  const w = canvas.width, h = canvas.height;
-  const n = gameData.primitives.length;
-  // choose columns that fit the width
-  const minStep = ITEM_RADIUS*2 + 16;
-  let cols = Math.max(1, Math.floor((w - 2*SAFE_MARGIN) / minStep));
-  cols = Math.max(1, Math.min(cols, n));
-  const rows = Math.ceil(n / cols);
-  const colSpacing = (w - 2*SAFE_MARGIN) / cols;
-  const rowSpacing = Math.max(minStep + 8, Math.min(160, (h - 2*SAFE_MARGIN) / rows));
-  gameData.primitives.forEach((p, i)=>{
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x = SAFE_MARGIN + colSpacing * (col + 0.5);
-    const y = SAFE_MARGIN + rowSpacing * (row + 0.5);
-    spawnItem(p, x, y);
-  });
-}
+      // drawing (dragged item always drawn on top)
 
-function newGame(){
-  discovered = new Set(gameData.primitives.map(norm));
-  items = []; nextId = 1; overTrash = false;
-  renderSidebar();
-  draw();
-  spawnInitialPrimitives();
-  saveGame();
-}
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#0c1118";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // subtle grid
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = "#15202c";
+        for (let x = 40; x < canvas.width; x += 40) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 40; y < canvas.height; y += 40) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+        ctx.restore();
 
-// try to load, otherwise start a new game
-if (!loadGame()) {
-  newGame();
-} else {
-  renderSidebar();
-  draw();
-}
-</script>
-</body>
+        const R = ITEM_RADIUS;
+        const drawOne = (it, highlight = false) => {
+          ctx.beginPath();
+          ctx.arc(it.x, it.y, R, 0, Math.PI * 2);
+          ctx.fillStyle = "#161c25";
+          ctx.fill();
+          ctx.strokeStyle = "#3a4a5a";
+          ctx.stroke();
+          if (highlight) {
+            ctx.beginPath();
+            ctx.arc(it.x, it.y, R + 4, 0, Math.PI * 2);
+            ctx.strokeStyle = "#5fb4ff";
+            ctx.stroke();
+          }
+          ctx.fillStyle = "#fff";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.font = "20px system-ui, sans-serif";
+          ctx.fillText(iconFor(it.name), it.x, it.y - 8);
+          ctx.font = "12px system-ui, sans-serif";
+          ctx.fillText(it.name, it.x, it.y + 14);
+        };
+
+        // draw non-dragged first
+        items.forEach((it) => {
+          if (!dragItem || it.id !== dragItem.id) drawOne(it, false);
+        });
+        // dragged last on top
+        if (dragItem) {
+          drawOne(dragItem, true);
+          if (overTrash) {
+            ctx.beginPath();
+            ctx.arc(dragItem.x, dragItem.y, R + 6, 0, Math.PI * 2);
+            ctx.strokeStyle = "#ff6161";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.lineWidth = 1;
+          }
+        }
+        // draw trash first so items/dragged are visually on top
+        drawTrash(overTrash);
+        // draw progress HUD on top
+        drawProgress();
+      }
+
+      // hit-test (topmost)
+      function pick(x, y) {
+        const R = ITEM_RADIUS;
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i];
+          if (Math.hypot(it.x - x, it.y - y) <= R) return it;
+        }
+        return null;
+      }
+
+      // drag logic with z-order bring-to-front
+      function startDrag(it, e, spawned = false) {
+        dragItem = it;
+        dragging = true;
+        // move to top (end of array) for z-order
+        const idx = items.findIndex((x) => x.id === it.id);
+        if (idx >= 0) {
+          items.splice(idx, 1);
+          items.push(it);
+        }
+        const r = canvas.getBoundingClientRect();
+        const cx = e.clientX - r.left,
+          cy = e.clientY - r.top;
+        dragDX = cx - it.x;
+        dragDY = cy - it.y;
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch (_) {}
+        draw();
+      }
+
+      canvas.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        const r = canvas.getBoundingClientRect();
+        const x = e.clientX - r.left,
+          y = e.clientY - r.top;
+        const it = pick(x, y);
+        if (it) startDrag(it, e);
+      });
+
+      canvas.addEventListener("pointermove", (e) => {
+        if (!dragging || !dragItem) return;
+        const r = canvas.getBoundingClientRect();
+        dragItem.x = Math.max(
+          SAFE_MARGIN,
+          Math.min(r.width - SAFE_MARGIN, e.clientX - r.left - dragDX)
+        );
+        dragItem.y = Math.max(
+          SAFE_MARGIN,
+          Math.min(r.height - SAFE_MARGIN, e.clientY - r.top - dragDY)
+        );
+        overTrash = isPointInTrash(dragItem.x, dragItem.y);
+        draw();
+      });
+
+      canvas.addEventListener("pointerup", (e) => {
+        if (!dragging || !dragItem) return;
+        const dropped = dragItem;
+        dragging = false;
+        dragItem = null;
+        overTrash = false;
+        // trash check
+        if (isPointInTrash(dropped.x, dropped.y)) {
+          removeItem(dropped.id);
+          draw();
+          return;
+        }
+        // check merge or resolve overlap
+        const MERGE_DIST = 30;
+        const OVERLAP_DIST = ITEM_RADIUS * 2 - 2;
+        let merged = false;
+        let overlapped = null;
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i];
+          if (it.id === dropped.id) continue;
+          const d = Math.hypot(it.x - dropped.x, it.y - dropped.y);
+          if (d <= MERGE_DIST) {
+            const key = pairKey(it.name, dropped.name);
+            const results = recipeByPair.get(key);
+            if (results && results.length) {
+              // remove sources
+              items = items.filter(
+                (x) => x.id !== it.id && x.id !== dropped.id
+              );
+              // spawn all results slightly fanned
+              const cx = (it.x + dropped.x) / 2,
+                cy = (it.y + dropped.y) / 2;
+              const spread = 24,
+                step = (Math.PI * 2) / (results.length || 1);
+              results.forEach((res, idx) => {
+                const nx = cx + Math.cos(idx * step) * spread;
+                const ny = cy + Math.sin(idx * step) * spread;
+                spawnItem(res, nx, ny);
+                discovered.add(norm(res));
+              });
+              renderSidebar();
+              saveGame();
+              merged = true;
+            } else {
+              overlapped = it; // close enough but no recipe
+            }
+            break;
+          } else if (d < OVERLAP_DIST) {
+            overlapped = it; // overlapping but not within merge range
+            break;
+          }
+        }
+        // if overlapped and not merged, slide the dropped item just outside overlap
+        if (!merged && overlapped) {
+          const it = overlapped;
+          let dx = dropped.x - it.x,
+            dy = dropped.y - it.y;
+          let len = Math.hypot(dx, dy);
+          if (len === 0) {
+            const ang = Math.random() * Math.PI * 2;
+            dx = Math.cos(ang);
+            dy = Math.sin(ang);
+            len = 1;
+          }
+          dx /= len;
+          dy /= len;
+          const targetDist = ITEM_RADIUS * 2 + 6;
+          let nx = it.x + dx * targetDist;
+          let ny = it.y + dy * targetDist;
+          // clamp to bounds
+          nx = Math.max(SAFE_MARGIN, Math.min(canvas.width - SAFE_MARGIN, nx));
+          ny = Math.max(SAFE_MARGIN, Math.min(canvas.height - SAFE_MARGIN, ny));
+          dropped.x = nx;
+          dropped.y = ny;
+          // try a few iterations to avoid overlaps with others
+          for (let iter = 0; iter < 6; iter++) {
+            let collided = null;
+            for (const other of items) {
+              if (other.id === dropped.id) continue;
+              const d2 = Math.hypot(other.x - dropped.x, other.y - dropped.y);
+              if (d2 < ITEM_RADIUS * 2 - 1) {
+                collided = other;
+                break;
+              }
+            }
+            if (!collided) break;
+            let ddx = dropped.x - collided.x,
+              ddy = dropped.y - collided.y;
+            let llen = Math.hypot(ddx, ddy) || 1;
+            ddx /= llen;
+            ddy /= llen;
+            dropped.x = collided.x + ddx * (ITEM_RADIUS * 2 + 6);
+            dropped.y = collided.y + ddy * (ITEM_RADIUS * 2 + 6);
+            dropped.x = Math.max(
+              SAFE_MARGIN,
+              Math.min(canvas.width - SAFE_MARGIN, dropped.x)
+            );
+            dropped.y = Math.max(
+              SAFE_MARGIN,
+              Math.min(canvas.height - SAFE_MARGIN, dropped.y)
+            );
+          }
+        }
+        draw();
+        saveGame();
+      });
+
+      // init
+      renderSidebar();
+      // smart initial placement (never off-screen)
+      function spawnInitialPrimitives() {
+        const w = canvas.width,
+          h = canvas.height;
+        const n = gameData.primitives.length;
+        // choose columns that fit the width
+        const minStep = ITEM_RADIUS * 2 + 16;
+        let cols = Math.max(1, Math.floor((w - 2 * SAFE_MARGIN) / minStep));
+        cols = Math.max(1, Math.min(cols, n));
+        const rows = Math.ceil(n / cols);
+        const colSpacing = (w - 2 * SAFE_MARGIN) / cols;
+        const rowSpacing = Math.max(
+          minStep + 8,
+          Math.min(160, (h - 2 * SAFE_MARGIN) / rows)
+        );
+        gameData.primitives.forEach((p, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const x = SAFE_MARGIN + colSpacing * (col + 0.5);
+          const y = SAFE_MARGIN + rowSpacing * (row + 0.5);
+          spawnItem(p, x, y);
+        });
+      }
+
+      function newGame() {
+        discovered = new Set(gameData.primitives.map(norm));
+        items = [];
+        nextId = 1;
+        overTrash = false;
+        renderSidebar();
+        draw();
+        spawnInitialPrimitives();
+        saveGame();
+      }
+
+      // try to load, otherwise start a new game
+      if (!loadGame()) {
+        newGame();
+      } else {
+        renderSidebar();
+        draw();
+      }
+    </script>
+  </body>
 </html>
