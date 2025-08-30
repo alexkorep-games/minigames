@@ -10,6 +10,11 @@
   #canvas{position:absolute;left:240px;top:0;right:0;bottom:0;background:#0c1118;touch-action:none;}
   .palette-item{cursor:pointer;margin:5px 0;padding:6px;background:#161c25;border:1px solid #1c2431;border-radius:8px;display:flex;align-items:center;gap:6px}
   .pi-emoji{width:20px;text-align:center}
+  /* sidebar controls */
+  .controls{position:sticky;top:0;z-index:5;background:#10131a;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #1c2431}
+  .controls .row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+  .btn{background:#1b2330;border:1px solid #2a3646;border-radius:8px;color:#cfe8ff;padding:6px 10px;cursor:pointer}
+  .btn:hover{background:#223042}
 </style>
 </head>
 <body>
@@ -73,6 +78,8 @@ for (const [result, inputs] of Object.entries(gameData.recipes)){
 let discovered = new Set(gameData.primitives.map(norm));
 let items = []; // {id,name,x,y}
 let nextId = 1;
+let isLoading = false;
+const SAVE_KEY = 'merger.save.v1';
 
 // DOM
 // declare drag state BEFORE any draw() is ever called
@@ -112,6 +119,63 @@ function drawTrash(highlight){
   ctx.restore();
 }
 
+// progress HUD (top-left)
+function drawProgress(){
+  const total = allItems.size;
+  const opened = discovered.size;
+  const text = `Discovered ${opened} / ${total}`;
+  const x = 12, y = 10, h = 28, pad = 10;
+  ctx.save();
+  ctx.font = '14px system-ui, sans-serif';
+  const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = '#10131a';
+  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill(); }
+  else { ctx.fillRect(x, y, w, h); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#cfe8ff';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + pad, y + h/2 + 0.5);
+  ctx.restore();
+}
+
+// persistence
+function saveGame(){
+  if (isLoading) return;
+  try{
+    const payload = {
+      v:1,
+      discovered:[...discovered],
+      items: items.map(({name,x,y})=>({n:name,x,y})),
+      nextId
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+  }catch(_){/* ignore quota/errors */}
+}
+
+function loadGame(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || data.v!==1) return false;
+    const valid = n => allItems.has(norm(n));
+    const disc = new Set((data.discovered||[]).map(norm).filter(valid));
+    // always keep primitives
+    gameData.primitives.forEach(p=>disc.add(norm(p)));
+    discovered = disc;
+    // rebuild items
+    items = []; nextId = 1; isLoading = true;
+    (data.items||[]).forEach(s=>{
+      if (!s || !valid(s.n)) return;
+      spawnItem(s.n, Number(s.x), Number(s.y));
+    });
+    nextId = Math.max(nextId, Number(data.nextId)||nextId);
+    isLoading = false;
+    return true;
+  }catch(_){ return false; }
+}
+
 function resize(){
   canvas.width = window.innerWidth - 240;
   canvas.height = window.innerHeight;
@@ -146,6 +210,27 @@ function paletteItem(name){
 }
 function renderSidebar(){
   sidebar.innerHTML = '';
+  // controls at top
+  const controls = document.createElement('div');
+  controls.className = 'controls';
+  const row = document.createElement('div');
+  row.className = 'row';
+  const title = document.createElement('div');
+  title.textContent = 'Palette';
+  title.style.opacity = '0.8';
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn';
+  resetBtn.textContent = 'Start Over';
+  resetBtn.addEventListener('click', ()=>{
+    const ok = confirm('Start over? This will erase your discovered items and board.');
+    if (!ok) return;
+    try{ localStorage.removeItem(SAVE_KEY); }catch(_){}
+    newGame();
+  });
+  row.appendChild(title);
+  row.appendChild(resetBtn);
+  controls.appendChild(row);
+  sidebar.appendChild(controls);
   [...discovered].sort().forEach(n=> sidebar.appendChild(paletteItem(n)) );
 }
 
@@ -157,10 +242,11 @@ function spawnItem(name,x,y){
     y: Math.max(SAFE_MARGIN, Math.min(h - SAFE_MARGIN, (y ?? h/2))) };
   items.push(obj);
   draw();
+  saveGame();
   return obj;
 }
 
-function removeItem(id){ items = items.filter(it=>it.id!==id); }
+function removeItem(id){ items = items.filter(it=>it.id!==id); saveGame(); }
 
 // drawing (dragged item always drawn on top)
 
@@ -189,6 +275,8 @@ function draw(){
   if (dragItem) { drawOne(dragItem,true); if (overTrash){ ctx.beginPath(); ctx.arc(dragItem.x, dragItem.y, R+6, 0, Math.PI*2); ctx.strokeStyle = '#ff6161'; ctx.lineWidth=2; ctx.stroke(); ctx.lineWidth=1; } }
   // draw trash first so items/dragged are visually on top
 drawTrash(overTrash);
+  // draw progress HUD on top
+  drawProgress();
 }
 
 // hit-test (topmost)
@@ -256,11 +344,13 @@ canvas.addEventListener('pointerup', (e)=>{
           discovered.add(norm(res));
         });
         renderSidebar();
+        saveGame();
       }
       break;
     }
   }
   draw();
+  saveGame();
 });
 
 // init
@@ -284,7 +374,23 @@ function spawnInitialPrimitives(){
     spawnItem(p, x, y);
   });
 }
-spawnInitialPrimitives();
+
+function newGame(){
+  discovered = new Set(gameData.primitives.map(norm));
+  items = []; nextId = 1; overTrash = false;
+  renderSidebar();
+  draw();
+  spawnInitialPrimitives();
+  saveGame();
+}
+
+// try to load, otherwise start a new game
+if (!loadGame()) {
+  newGame();
+} else {
+  renderSidebar();
+  draw();
+}
 </script>
 </body>
 </html>
